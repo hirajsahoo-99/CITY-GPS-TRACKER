@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPS Tracker App</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 15px;
+            background-color: #f4f7f6;
+        }
+        h2 {
+            color: #333;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 10px;
+            font-size: 20px;
+            margin-bottom: 15px;
+        }
+        .feeds-grid {
+            display: flex;
+            gap: 15px;
+            flex-direction: column;
+            margin-top: 10px;
+        }
+        .feed-card {
+            background: #ffffff;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            border-top: 5px solid #007bff;
+            box-sizing: border-box;
+            width: 100%;
+        }
+        .feed-card.latest {
+            border-top-color: #28a745;
+            background-color: #f8fff9;
+        }
+        .time {
+            font-size: 11px;
+            color: #777;
+            margin-bottom: 10px;
+        }
+        .coord {
+            font-size: 16px;
+            font-weight: bold;
+            margin: 8px 0;
+            color: #2c3e50;
+        }
+        .label {
+            color: #007bff;
+            font-weight: normal;
+        }
+        /* LIVE MAP CONTAINER LAYOUT */
+        .map-box {
+            width: 100%;
+            height: 350px;
+            margin-top: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            overflow: hidden;
+            border: 1px solid #ccc;
+            background-color: #e5e3df;
+        }
+        #live-map-frame {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 2px 6px;
+            font-size: 11px;
+            border-radius: 4px;
+            background: #e2e8f0;
+            font-weight: normal;
+            float: right;
+            margin-top: 5px;
+        }
+        /* VEHICLE CONNECTION STATUS BADGE */
+        .vehicle-badge {
+            display: inline-block;
+            padding: 2px 6px;
+            font-size: 11px;
+            border-radius: 4px;
+            font-weight: bold;
+            float: right;
+            margin-top: 5px;
+            margin-right: 8px;
+            color: #fff;
+            background: #6c757d;
+        }
+        .v-connected { background-color: #28a745; }
+        .v-disconnected { background-color: #dc3545; }
+    </style>
+</head>
+<body>
+
+    <h2>
+        <span id="channel-name">Connecting to GPS...</span>
+        <span class="status-badge" id="status">Live Tracking</span>
+        <span class="vehicle-badge" id="vehicle-status">Checking...</span>
+    </h2>
+
+    <!-- 1. Latitude/Longitude Display Area -->
+    <div id="feeds-container" class="feeds-grid">Loading coordinates...</div>
+
+    <!-- 2. Google Maps Frame View Area -->
+    <div class="map-box">
+        <iframe id="live-map-frame" src=""></iframe>
+    </div>
+
+    <script>
+        // ThingSpeak API Endpoint URL
+        const url = "https://api.thingspeak.com/channels/3462965/feeds.json?api_key=B4BANQ7KTNALDOBP&results=2";
+
+        function fetchAndRenderData() {
+            document.getElementById('status').textContent = "Updating...";
+            
+            fetch(url)
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('channel-name').textContent = data.channel.name;
+                    const container = document.getElementById('feeds-container');
+                    container.innerHTML = '';
+
+                    if (!data.feeds || data.feeds.length === 0) {
+                        container.innerHTML = "No GPS feeds available.";
+                        document.getElementById('vehicle-status').textContent = "Disconnected";
+                        document.getElementById('vehicle-status').className = "vehicle-badge v-disconnected";
+                        return;
+                    }
+
+                    // Cards layout loop logic
+                    for (let i = data.feeds.length - 1; i >= 0; i--) {
+                        const feed = data.feeds[i];
+                        
+                        // Custom Date & HH.MM AM/PM Format Converter
+                        const dateObj = new Date(feed.created_at);
+                        const dateString = dateObj.toLocaleDateString(); 
+                        
+                        let hours = dateObj.getHours();
+                        const minutes = dateObj.getMinutes().toString().padStart(2, '0');
+                        const ampm = hours >= 12 ? 'PM' : 'AM';
+                        hours = hours % 12;
+                        hours = hours ? hours : 12; 
+                        const hoursString = hours.toString().padStart(2, '0');
+                        
+                        const formattedTime = `${dateString}, ${hoursString}.${minutes} ${ampm}`;
+
+                        const pingTime = dateObj.getTime();
+                        const nowTime = new Date().getTime();
+                        const diffMins = Math.floor((nowTime - pingTime) / (1000 * 60));
+                        
+                        let agoText = "";
+                        if (diffMins < 1) {
+                            agoText = "<b>(Just Now)</b>";
+                        } else {
+                            agoText = `<b>(${diffMins} mint ago)</b>`;
+                        }
+
+                        const isLatest = (i === data.feeds.length - 1);
+                        
+                        // Fetching speed from field3 and removing decimals (like 0.0 to 0)
+                        const rawSpeed = parseFloat(feed.field3);
+                        const speed = (!isNaN(rawSpeed)) ? Math.round(rawSpeed) + " km/h" : "0 km/h";
+
+                        const card = `
+                            <div class="feed-card ${isLatest ? 'latest' : ''}">
+                                <div class="time">🕒 ${formattedTime} ${isLatest ? agoText : ''}</div>
+                                <div class="coord"><span class="label">Latitude:</span> ${feed.field1 || 'N/A'}</div>
+                                <div class="coord"><span class="label">Longitude:</span> ${feed.field2 || 'N/A'}</div>
+                                <div class="coord"><span class="label">Speed:</span> ${speed}</div>
+                            </div>`;
+                        container.innerHTML += card;
+                    }
+
+                    // PERFECTLY FORMATTED GOOGLE MAP LINK ENGINE
+                    if (data.feeds.length > 0) {
+                        const latestFeed = data.feeds[data.feeds.length - 1];
+                        const lat = parseFloat(latestFeed.field1);
+                        const lng = parseFloat(latestFeed.field2);
+
+                        if (!isNaN(lat) && !isNaN(lng)) {
+                            // Yahan pure link ko sahi question mark (?q=) ke sath lock kar diya gaya hai
+                            const nativeGoogleMapUrl = `https://maps.google.com/?q=${lat},${lng}&z=15&output=embed`;
+                            document.getElementById('live-map-frame').src = nativeGoogleMapUrl;
+                        }
+
+                        // Vehicle Connection Status Logic (Checking if latest ping is within 3 minutes)
+                        const lastPingTime = new Date(latestFeed.created_at).getTime();
+                        const currentTime = new Date().getTime();
+                        const diffMinutes = (currentTime - lastPingTime) / (1000 * 60);
+
+                        const vehicleStatusEl = document.getElementById('vehicle-status');
+                        if (diffMinutes <= 3) {
+                            vehicleStatusEl.textContent = "Vehicle Connected";
+                            vehicleStatusEl.className = "vehicle-badge v-connected";
+                        } else {
+                            vehicleStatusEl.textContent = "Vehicle Disconnected";
+                            vehicleStatusEl.className = "vehicle-badge v-disconnected";
+                        }
+                    }
+
+                    document.getElementById('status').textContent = "Live";
+                })
+                .catch(error => {
+                    console.error("App layer execution exception:", error);
+                    document.getElementById('status').textContent = "Offline / Error";
+                    document.getElementById('vehicle-status').textContent = "Disconnected";
+                    document.getElementById('vehicle-status').className = "vehicle-badge v-disconnected";
+                });
+        }
+
+        // Startup render call
+        fetchAndRenderData();
+
+        // 15 seconds real-time auto-refresh loop
+        setInterval(fetchAndRenderData, 15000);
+    </script>
+</body>
+</html>
