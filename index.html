@@ -150,13 +150,24 @@
 
                         const pingTime = dateObj.getTime();
                         const nowTime = new Date().getTime();
-                        const diffMins = Math.floor((nowTime - pingTime) / (1000 * 60));
+                        const diffTotalMins = Math.floor((nowTime - pingTime) / (1000 * 60));
                         
+                        // --- DYNAMIC TIME AGO LOGIC ---
                         let agoText = "";
-                        if (diffMins < 1) {
+                        if (diffTotalMins < 1) {
                             agoText = "<b>(Just Now)</b>";
+                        } else if (diffTotalMins < 60) {
+                            // 1 ghante se kam ho toh sirf mint ago dikhaye
+                            agoText = `<b>(${diffTotalMins} mint ago)</b>`;
+                        } else if (diffTotalMins < 1440) {
+                            // 24 ghante se kam ho toh hour aur mint dono dikhaye
+                            const displayHours = Math.floor(diffTotalMins / 60);
+                            const displayMins = diffTotalMins % 60;
+                            agoText = `<b>(${displayHours} hour ${displayMins} mint ago)</b>`;
                         } else {
-                            agoText = `<b>(${diffMins} mint ago)</b>`;
+                            // 24 ghante se zyada hone par day ago dikhaye
+                            const displayDays = Math.floor(diffTotalMins / 1440);
+                            agoText = `<b>(${displayDays} day ago)</b>`;
                         }
 
                         const isLatest = (i === data.feeds.length - 1);
