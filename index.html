@@ -1,255 +1,260 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
- <meta charset="UTF-8">
- <meta name="viewport" content="width=device-width, initial-scale=1.0">
- <title>GPS Tracker App</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GPS Tracker App</title>
+<!-- Leaflet CSS/JS (free, no API key needed) -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  margin: 15px;
+  background-color: #f4f7f6;
+}
+h2 {
+  color: #333;
+  border-bottom: 2px solid #007bff;
+  padding-bottom: 10px;
+  font-size: 20px;
+  margin-bottom: 15px;
+}
+.feeds-grid {
+  display: flex;
+  gap: 15px;
+  flex-direction: column;
+  margin-top: 10px;
+}
+.feed-card {
+  background: #ffffff;
+  padding: 15px;
+  border-radius: 8px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+  border-top: 5px solid #007bff;
+  box-sizing: border-box;
+  width: 100%;
+}
+.feed-card.latest {
+  border-top-color: #28a745;
+  background-color: #f8fff9;
+}
+.time {
+  font-size: 11px;
+  color: #777;
+  margin-bottom: 10px;
+}
+.coord {
+  font-size: 16px;
+  font-weight: bold;
+  margin: 8px 0;
+  color: #2c3e50;
+}
+.label {
+  color: #007bff;
+  font-weight: normal;
+}
+/* LIVE MAP CONTAINER LAYOUT */
+.map-box {
+  width: 100%;
+  height: 350px;
+  margin-top: 20px;
+  border-radius: 8px;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+  overflow: hidden;
+  border: 1px solid #ccc;
+  background-color: #e5e3df;
+}
+#live-map-frame {
+  width: 100%;
+  height: 100%;
+}
+.status-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  font-size: 11px;
+  border-radius: 4px;
+  background: #e2e8f0;
+  font-weight: normal;
+  float: right;
+  margin-top: 5px;
+}
+/* VEHICLE CONNECTION STATUS BADGE */
+.vehicle-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  font-size: 11px;
+  border-radius: 4px;
+  font-weight: bold;
+  float: right;
+  margin-top: 5px;
+  margin-right: 8px;
+  color: #fff;
+  background: #6c757d;
+}
+.v-connected { background-color: #28a745; }
+.v-disconnected { background-color: #dc3545; }
 
- <!-- Leaflet CSS/JS (free, no API key needed) -->
- <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
- <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
- <style>
- body {
- font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
- margin: 15px;
- background-color: #f4f7f6;
- }
- h2 {
- color: #333;
- border-bottom: 2px solid #007bff;
- padding-bottom: 10px;
- font-size: 20px;
- margin-bottom: 15px;
- }
- .feeds-grid {
- display: flex;
- gap: 15px;
- flex-direction: column;
- margin-top: 10px;
- }
- .feed-card {
- background: #ffffff;
- padding: 15px;
- border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);
- border-top: 5px solid #007bff;
- box-sizing: border-box;
- width: 100%;
- }
- .feed-card.latest {
- border-top-color: #28a745;
- background-color: #f8fff9;
- }
- .time {
- font-size: 11px;
- color: #777;
- margin-bottom: 10px;
- }
- .coord {
- font-size: 16px;
- font-weight: bold;
- margin: 8px 0;
- color: #2c3e50;
- }
- .label {
- color: #007bff;
- font-weight: normal;
- }
- /* LIVE MAP CONTAINER LAYOUT */
- .map-box {
- width: 100%;
- height: 350px;
- margin-top: 20px; border-radius: 8px;
- box-shadow: 0 4px 8px rgba(0,0,0,0.1);
- overflow: hidden;
- border: 1px solid #ccc;
- background-color: #e5e3df;
- }
- #live-map-frame {
- width: 100%;
- height: 100%;
- }
- .status-badge {
- display: inline-block;
- padding: 2px 6px;
- font-size: 11px;
- border-radius: 4px;
- background: #e2e8f0;
- font-weight: normal;
- float: right;
- margin-top: 5px;
- }
- /* VEHICLE CONNECTION STATUS BADGE */
- .vehicle-badge {
- display: inline-block;
- padding: 2px 6px;
- font-size: 11px;
- border-radius: 4px;
- font-weight: bold;
- float: right; margin-top: 5px;
- margin-right: 8px;
- color: #fff;
- background: #6c757d;
- }
- .v-connected { background-color: #28a745; }
- .v-disconnected { background-color: #dc3545; }
- </style>
+/* CAR ICON MARKER (replaces default Leaflet pin for the live/latest position) */
+.car-icon-marker {
+  font-size: 26px;
+  line-height: 1;
+  text-align: center;
+  filter: drop-shadow(0 2px 2px rgba(0,0,0,0.4));
+}
+</style>
 </head>
 <body>
- <h2>
- <span id="channel-name">Connecting to GPS...</span>
- <span class="status-badge" id="status">Live Tracking</span>
- <span class="vehicle-badge" id="vehicle-status">Checking...</span>
- </h2>
- <!-- 1. Latitude/Longitude Display Area -->
- <div id="feeds-container" class="feeds-grid">Loading coordinates...</div>
- <!-- 2. Leaflet Map (shows trajectory path) -->
- <div class="map-box">
- <div id="live-map-frame"></div>
- </div>
+<h2>
+<span id="channel-name">Connecting to GPS...</span>
+<span class="status-badge" id="status">Live Tracking</span>
+<span class="vehicle-badge" id="vehicle-status">Checking...</span>
+</h2>
+<!-- 1. Latitude/Longitude Display Area -->
+<div id="feeds-container" class="feeds-grid">Loading coordinates...</div>
+<!-- 2. Leaflet Map (shows trajectory path) -->
+<div class="map-box">
+<div id="live-map-frame"></div>
+</div>
+<script>
+// ThingSpeak API Endpoint URL
+// NOTE: results ko badha diya hai (2 se 50) taaki trajectory ke liye enough points milein
+const url = "https://api.thingspeak.com/channels/3462965/feeds.json?api_key=B4BANQ7KTNALDOBP&results=50";
 
- <script>
- // ThingSpeak API Endpoint URL
- // NOTE: results ko badha diya hai (2 se 50) taaki trajectory ke liye enough points milein
- const url = "https://api.thingspeak.com/channels/3462965/feeds.json?api_key=B4BANQ7KTNALDOBP&results=50";
+// Leaflet map init (ek hi baar)
+let map = null;
+let pathLine = null;
+let startMarker = null;
+let liveMarker = null;
 
- // Leaflet map init (ek hi baar)
- let map = null;
- let pathLine = null;
- let startMarker = null;
- let liveMarker = null;
+// Custom car icon for the live/latest position marker (replaces default pin)
+const carIcon = L.divIcon({
+  className: 'car-icon-marker',
+  html: '🚗',
+  iconSize: [30, 30],
+  iconAnchor: [15, 15],
+  popupAnchor: [0, -15]
+});
 
- function initMapIfNeeded() {
-   if (map) return;
-   map = L.map('live-map-frame').setView([20.95575, 84.47108], 15);
-   // MapTiler tiles (OpenStreetMap style) using your free API key - permanent, app-friendly
-   L.tileLayer('https://api.maptiler.com/maps/openstreetmap/{z}/{x}/{y}.png?key=uqDjOTcIKm28iF924vhH', {
-     maxZoom: 20,
-     attribution: '&copy; MapTiler &copy; OpenStreetMap contributors'
-   }).addTo(map);
+function initMapIfNeeded() {
+ if (map) return;
+ map = L.map('live-map-frame').setView([20.95575, 84.47108], 15);
+ // MapTiler tiles (OpenStreetMap style) using your free API key - permanent, app-friendly
+ L.tileLayer('https://api.maptiler.com/maps/openstreetmap/{z}/{x}/{y}.png?key=uqDjOTcIKm28iF924vhH', {
+ maxZoom: 20,
+ attribution: '&copy; MapTiler &copy; OpenStreetMap contributors'
+ }).addTo(map);
+}
+
+function fetchAndRenderData() {
+document.getElementById('status').textContent = "Updating...";
+fetch(url)
+.then(response => response.json())
+.then(data => {
+document.getElementById('channel-name').textContent = data.channel.name;
+const container = document.getElementById('feeds-container');
+container.innerHTML = '';
+if (!data.feeds || data.feeds.length === 0) {
+container.innerHTML = "No GPS feeds available.";
+document.getElementById('vehicle-status').textContent = "Disconnected";
+document.getElementById('vehicle-status').className = "vehicle-badge v-disconnected";
+return;
+}
+// ---- Build the trajectory point list (valid lat/lng only) ----
+const trackPoints = [];
+data.feeds.forEach(f => {
+ const la = parseFloat(f.field1);
+ const lo = parseFloat(f.field2);
+ if (!isNaN(la) && !isNaN(lo) && !(la === 0 && lo === 0)) {
+ trackPoints.push([la, lo]);
  }
-
- function fetchAndRenderData() {
- document.getElementById('status').textContent = "Updating...";
-
- fetch(url)
- .then(response => response.json())
- .then(data => {
- document.getElementById('channel-name').textContent = data.channel.name;
- const container = document.getElementById('feeds-container');
- container.innerHTML = '';
- if (!data.feeds || data.feeds.length === 0) {
- container.innerHTML = "No GPS feeds available.";
- document.getElementById('vehicle-status').textContent = "Disconnected";
- document.getElementById('vehicle-status').className = "vehicle-badge v-disconnected";
- return;
- }
-
- // ---- Build the trajectory point list (valid lat/lng only) ----
- const trackPoints = [];
- data.feeds.forEach(f => {
-   const la = parseFloat(f.field1);
-   const lo = parseFloat(f.field2);
-   if (!isNaN(la) && !isNaN(lo) && !(la === 0 && lo === 0)) {
-     trackPoints.push([la, lo]);
-   }
- });
-
- // Cards: sirf latest 2 feeds dikhate hain (jaisa pehle tha)
- const cardsToShow = data.feeds.slice(-2);
- for (let i = cardsToShow.length - 1; i >= 0; i--) {
- const feed = cardsToShow[i];
-
- // Custom Date & HH.MM AM/PM Format Converter
- const dateObj = new Date(feed.created_at);
- const dateString = dateObj.toLocaleDateString();
-
- let hours = dateObj.getHours();
- const minutes = dateObj.getMinutes().toString().padStart(2, '0'); const ampm = hours >= 12 ? 'PM' : 'AM';
- hours = hours % 12;
- hours = hours ? hours : 12;
- const hoursString = hours.toString().padStart(2, '0');
-
- const formattedTime = `${dateString}, ${hoursString}.${minutes} ${ampm}`;
- const pingTime = dateObj.getTime();
- const nowTime = new Date().getTime();
- const diffTotalMins = Math.floor((nowTime - pingTime) / (1000 * 60));
-
- // --- DYNAMIC TIME AGO LOGIC ---
- let agoText = "";
- if (diffTotalMins < 1) {
- agoText = "<b>(Just Now)</b>";
- } else if (diffTotalMins < 60) {
- agoText = `<b>(${diffTotalMins} mint ago)</b>`;
- } else if (diffTotalMins < 1440) {
- const displayHours = Math.floor(diffTotalMins / 60);
- const displayMins = diffTotalMins % 60;
- agoText = `<b>(${displayHours} hour ${displayMins} mint ago)</b>`;
- } else {
- const displayDays = Math.floor(diffTotalMins / 1440);
- agoText = `<b>(${displayDays} day ago)</b>`;
- } const isLatest = (i === cardsToShow.length - 1);
-
- const rawSpeed = parseFloat(feed.field3);
- const speed = (!isNaN(rawSpeed)) ? Math.round(rawSpeed) + " km/h" : "0 km/h";
- const card = `
- <div class="feed-card ${isLatest ? 'latest' : ''}">
- <div class="time">🕒 ${formattedTime} ${isLatest ? agoText : ''}</div>
- <div class="coord"><span class="label">Latitude:</span> ${feed.field1 || 'N/A'}</div>
- <div class="coord"><span class="label">Longitude:</span> ${feed.field2 || 'N/A'}</div>
- <div class="coord"><span class="label">Speed:</span> ${speed}</div>
- </div>`;
- container.innerHTML += card;
- }
-
- // ---- Draw trajectory on Leaflet map ----
- initMapIfNeeded();
-
- if (trackPoints.length > 0) {
-   // Path line
-   if (pathLine) { map.removeLayer(pathLine); }
-   pathLine = L.polyline(trackPoints, { color: '#007bff', weight: 4, opacity: 0.8 }).addTo(map);
-
-   // Start marker
-   if (startMarker) { map.removeLayer(startMarker); }
-   startMarker = L.circleMarker(trackPoints[0], { radius: 6, color: '#28a745', fillColor: '#28a745', fillOpacity: 1 })
-     .addTo(map).bindPopup("Start");
-
-   // Latest/live marker
-   const lastPoint = trackPoints[trackPoints.length - 1];
-   if (liveMarker) { map.removeLayer(liveMarker); }
-   liveMarker = L.marker(lastPoint).addTo(map).bindPopup("Latest position");
-
-   // Fit map to show the whole path
-   map.fitBounds(pathLine.getBounds(), { padding: [30, 30] });
- }
-
- // Vehicle Connection Status Logic (Checking if latest ping is within 3 minutes)
- const latestFeed = data.feeds[data.feeds.length - 1];
- const lastPingTime = new Date(latestFeed.created_at).getTime();
- const currentTime = new Date().getTime();
- const diffMinutes = (currentTime - lastPingTime) / (1000 * 60);
- const vehicleStatusEl = document.getElementById('vehicle-status');
- if (diffMinutes <= 3) {
- vehicleStatusEl.textContent = "Vehicle Connected";
- vehicleStatusEl.className = "vehicle-badge v-connected";
- } else {
- vehicleStatusEl.textContent = "Vehicle Disconnected";
- vehicleStatusEl.className = "vehicle-badge v-disconnected";
- }
-
- document.getElementById('status').textContent = "Live";
- })
- .catch(error => {
- console.error("App layer execution exception:", error);
- document.getElementById('status').textContent = "Offline / Error";
- document.getElementById('vehicle-status').textContent = "Disconnected"; document.getElementById('vehicle-status').className = "vehicle-badge v-disconnected";
- });
- }
- // Startup render call
- fetchAndRenderData();
- // 15 seconds real-time auto-refresh loop
- setInterval(fetchAndRenderData, 15000);
- </script>
+});
+// Cards: sirf latest 2 feeds dikhate hain (jaisa pehle tha)
+const cardsToShow = data.feeds.slice(-2);
+for (let i = cardsToShow.length - 1; i >= 0; i--) {
+const feed = cardsToShow[i];
+// Custom Date & HH.MM AM/PM Format Converter
+const dateObj = new Date(feed.created_at);
+const dateString = dateObj.toLocaleDateString();
+let hours = dateObj.getHours();
+const minutes = dateObj.getMinutes().toString().padStart(2, '0');
+const ampm = hours >= 12 ? 'PM' : 'AM';
+hours = hours % 12;
+hours = hours ? hours : 12;
+const hoursString = hours.toString().padStart(2, '0');
+const formattedTime = `${dateString}, ${hoursString}.${minutes} ${ampm}`;
+const pingTime = dateObj.getTime();
+const nowTime = new Date().getTime();
+const diffTotalMins = Math.floor((nowTime - pingTime) / (1000 * 60));
+// --- DYNAMIC TIME AGO LOGIC ---
+let agoText = "";
+if (diffTotalMins < 1) {
+agoText = "<b>(Just Now)</b>";
+} else if (diffTotalMins < 60) {
+agoText = `<b>(${diffTotalMins} mint ago)</b>`;
+} else if (diffTotalMins < 1440) {
+const displayHours = Math.floor(diffTotalMins / 60);
+const displayMins = diffTotalMins % 60;
+agoText = `<b>(${displayHours} hour ${displayMins} mint ago)</b>`;
+} else {
+const displayDays = Math.floor(diffTotalMins / 1440);
+agoText = `<b>(${displayDays} day ago)</b>`;
+}
+const isLatest = (i === cardsToShow.length - 1);
+const rawSpeed = parseFloat(feed.field3);
+const speed = (!isNaN(rawSpeed)) ? Math.round(rawSpeed) + " km/h" : "0 km/h";
+const card = `
+<div class="feed-card ${isLatest ? 'latest' : ''}">
+<div class="time">🕒 ${formattedTime} ${isLatest ? agoText : ''}</div>
+<div class="coord"><span class="label">Latitude:</span> ${feed.field1 || 'N/A'}</div>
+<div class="coord"><span class="label">Longitude:</span> ${feed.field2 || 'N/A'}</div>
+<div class="coord"><span class="label">Speed:</span> ${speed}</div>
+</div>`;
+container.innerHTML += card;
+}
+// ---- Draw trajectory on Leaflet map ----
+initMapIfNeeded();
+if (trackPoints.length > 0) {
+ // Path line
+ if (pathLine) { map.removeLayer(pathLine); }
+ pathLine = L.polyline(trackPoints, { color: '#007bff', weight: 4, opacity: 0.8 }).addTo(map);
+ // Start marker
+ if (startMarker) { map.removeLayer(startMarker); }
+ startMarker = L.circleMarker(trackPoints[0], { radius: 6, color: '#28a745', fillColor: '#28a745', fillOpacity: 1 })
+ .addTo(map).bindPopup("Start");
+ // Latest/live marker (car icon)
+ const lastPoint = trackPoints[trackPoints.length - 1];
+ if (liveMarker) { map.removeLayer(liveMarker); }
+ liveMarker = L.marker(lastPoint, { icon: carIcon }).addTo(map).bindPopup("Latest position");
+ // Fit map to show the whole path
+ map.fitBounds(pathLine.getBounds(), { padding: [30, 30] });
+}
+// Vehicle Connection Status Logic (Checking if latest ping is within 3 minutes)
+const latestFeed = data.feeds[data.feeds.length - 1];
+const lastPingTime = new Date(latestFeed.created_at).getTime();
+const currentTime = new Date().getTime();
+const diffMinutes = (currentTime - lastPingTime) / (1000 * 60);
+const vehicleStatusEl = document.getElementById('vehicle-status');
+if (diffMinutes <= 3) {
+vehicleStatusEl.textContent = "Vehicle Connected";
+vehicleStatusEl.className = "vehicle-badge v-connected";
+} else {
+vehicleStatusEl.textContent = "Vehicle Disconnected";
+vehicleStatusEl.className = "vehicle-badge v-disconnected";
+}
+document.getElementById('status').textContent = "Live";
+})
+.catch(error => {
+console.error("App layer execution exception:", error);
+document.getElementById('status').textContent = "Offline / Error";
+document.getElementById('vehicle-status').textContent = "Disconnected";
+document.getElementById('vehicle-status').className = "vehicle-badge v-disconnected";
+});
+}
+// Startup render call
+fetchAndRenderData();
+// 15 seconds real-time auto-refresh loop
+setInterval(fetchAndRenderData, 15000);
+</script>
 </body>
 </html>
