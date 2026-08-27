@@ -95,13 +95,37 @@ h2 {
 .v-connected { background-color: #28a745; }
 .v-disconnected { background-color: #dc3545; }
 
-/* CAR ICON MARKER (replaces default Leaflet pin for the live/latest position) */
+/* CAR ICON MARKER (top-view car, replaces default Leaflet pin, rotates with heading) */
 .car-icon-marker {
-  font-size: 26px;
-  line-height: 1;
-  text-align: center;
   filter: drop-shadow(0 2px 2px rgba(0,0,0,0.4));
 }
+.car-icon-marker .car-rotate {
+  width: 34px;
+  height: 34px;
+  transition: transform 0.4s linear; /* smooth turn when heading changes */
+}
+
+/* SMALL RE-CENTER BUTTON (positioned over the map, top-right) */
+.map-box { position: relative; }
+#recenter-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1000;
+  width: 30px;
+  height: 30px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: #ffffff;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+#recenter-btn:hover { background: #f0f0f0; }
+#recenter-btn svg { width: 18px; height: 18px; }
 </style>
 </head>
 <body>
@@ -115,6 +139,17 @@ h2 {
 <!-- 2. Leaflet Map (shows trajectory path) -->
 <div class="map-box">
 <div id="live-map-frame"></div>
+<button id="recenter-btn" title="Re-center map">
+  <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="12" cy="12" r="5.5" stroke="#333" stroke-width="1.6"/>
+    <circle cx="12" cy="12" r="1.4" fill="#333"/>
+    <path d="M12 2.5v3.2M12 18.3v3.2M2.5 12h3.2M18.3 12h3.2" stroke="#333" stroke-width="1.6" stroke-linecap="round"/>
+    <path d="M3 3v4.5M3 3h4.5" stroke="#333" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M21 3v4.5M21 3h-4.5" stroke="#333" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M3 21v-4.5M3 21h4.5" stroke="#333" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M21 21v-4.5M21 21h-4.5" stroke="#333" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+</button>
 </div>
 <script>
 // ThingSpeak API Endpoint URL
@@ -126,15 +161,74 @@ let map = null;
 let pathLine = null;
 let startMarker = null;
 let liveMarker = null;
+let hasAutoFitted = false; // ensures we only auto zoom/pan on the very first load
+let lastPathBounds = null; // remembers latest trajectory bounds for the recenter button
 
-// Custom car icon for the live/latest position marker (replaces default pin)
-const carIcon = L.divIcon({
-  className: 'car-icon-marker',
-  html: '🚗',
-  iconSize: [30, 30],
-  iconAnchor: [15, 15],
-  popupAnchor: [0, -15]
+// Re-center button: jab click ho, map ko latest trajectory par wapas fit karo
+document.getElementById('recenter-btn').addEventListener('click', function() {
+  if (map && lastPathBounds) {
+    map.fitBounds(lastPathBounds, { padding: [30, 30] });
+  }
 });
+
+// Top-view car SVG (realistic glossy red car, matching reference image). Default artwork points "up" (north = 0deg heading).
+const CAR_SVG = `
+<svg class="car-rotate" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="carBodyGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#c81f2e"/>
+      <stop offset="35%" stop-color="#ff4d4d"/>
+      <stop offset="55%" stop-color="#ff7a7a"/>
+      <stop offset="100%" stop-color="#b5121f"/>
+    </linearGradient>
+  </defs>
+  <g>
+    <!-- side mirrors -->
+    <rect x="7" y="11" width="3" height="4" rx="1.3" fill="#8f0f18"/>
+    <rect x="30" y="11" width="3" height="4" rx="1.3" fill="#8f0f18"/>
+    <!-- car body (top-down view, rounded like a hatchback) -->
+    <path d="M20 2
+             C27 2 30 6 30.5 12
+             L30.5 27
+             C30.5 33 26 38 20 38
+             C14 38 9.5 33 9.5 27
+             L9.5 12
+             C10 6 13 2 20 2 Z"
+          fill="url(#carBodyGrad)" stroke="#7a0e17" stroke-width="0.6"/>
+    <!-- windshield -->
+    <path d="M13.5 10.5 C14.5 8.5 25.5 8.5 26.5 10.5 C27 12.5 27 15.5 26 16.5 C22 17.5 18 17.5 14 16.5 C13 15.5 13 12.5 13.5 10.5 Z" fill="#2b2b2f"/>
+    <!-- rear window -->
+    <path d="M14 24 C18 23 22 23 26 24 C27 25.5 27 28.5 26 30 C22 31 18 31 14 30 C13 28.5 13 25.5 14 24 Z" fill="#2b2b2f"/>
+    <!-- roof highlight -->
+    <ellipse cx="20" cy="20" rx="4.5" ry="3.5" fill="#ff9d9d" opacity="0.55"/>
+    <!-- gloss streak -->
+    <path d="M15 4 C13 10 13 30 15 36" stroke="#ffffff" stroke-width="1.4" stroke-linecap="round" opacity="0.35" fill="none"/>
+  </g>
+</svg>`;
+
+// Builds a car marker icon rotated to face the given heading (degrees, 0 = north/up)
+function getCarIcon(headingDeg) {
+  return L.divIcon({
+    className: 'car-icon-marker',
+    html: `<div class="car-rotate" style="transform: rotate(${headingDeg}deg);">${CAR_SVG}</div>`,
+    iconSize: [34, 34],
+    iconAnchor: [17, 17],
+    popupAnchor: [0, -17]
+  });
+}
+
+// Compass bearing (0-360, 0=north) from point A to point B
+function computeBearing(latA, lonA, latB, lonB) {
+  const toRad = d => d * Math.PI / 180;
+  const toDeg = r => r * 180 / Math.PI;
+  const dLon = toRad(lonB - lonA);
+  const y = Math.sin(dLon) * Math.cos(toRad(latB));
+  const x = Math.cos(toRad(latA)) * Math.sin(toRad(latB)) -
+            Math.sin(toRad(latA)) * Math.cos(toRad(latB)) * Math.cos(dLon);
+  return (toDeg(Math.atan2(y, x)) + 360) % 360;
+}
+
+let lastHeading = 0; // keeps the car facing its last known direction if no new movement
 
 function initMapIfNeeded() {
  if (map) return;
@@ -222,12 +316,26 @@ if (trackPoints.length > 0) {
  if (startMarker) { map.removeLayer(startMarker); }
  startMarker = L.circleMarker(trackPoints[0], { radius: 6, color: '#28a745', fillColor: '#28a745', fillOpacity: 1 })
  .addTo(map).bindPopup("Start");
- // Latest/live marker (car icon)
+ // Latest/live marker (top-view car icon, rotated to face direction of travel)
  const lastPoint = trackPoints[trackPoints.length - 1];
+ if (trackPoints.length >= 2) {
+   const prevPoint = trackPoints[trackPoints.length - 2];
+   // only update heading if the car actually moved (avoids jitter when stationary)
+   if (prevPoint[0] !== lastPoint[0] || prevPoint[1] !== lastPoint[1]) {
+     lastHeading = computeBearing(prevPoint[0], prevPoint[1], lastPoint[0], lastPoint[1]);
+   }
+ }
  if (liveMarker) { map.removeLayer(liveMarker); }
- liveMarker = L.marker(lastPoint, { icon: carIcon }).addTo(map).bindPopup("Latest position");
- // Fit map to show the whole path
- map.fitBounds(pathLine.getBounds(), { padding: [30, 30] });
+ liveMarker = L.marker(lastPoint, { icon: getCarIcon(lastHeading) }).addTo(map).bindPopup("Latest position");
+ // Remember bounds for the manual re-center button
+ lastPathBounds = pathLine.getBounds();
+ // Fit map to show the whole path -- ONLY on the very first load.
+ // Baad ke refreshes par map ko touch nahi karte, taaki user ka manual zoom/pan
+ // (ya jahan wo dekh raha hai) disturb na ho.
+ if (!hasAutoFitted) {
+   map.fitBounds(lastPathBounds, { padding: [30, 30] });
+   hasAutoFitted = true;
+ }
 }
 // Vehicle Connection Status Logic (Checking if latest ping is within 3 minutes)
 const latestFeed = data.feeds[data.feeds.length - 1];
