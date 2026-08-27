@@ -122,8 +122,10 @@
  function initMapIfNeeded() {
    if (map) return;
    map = L.map('live-map-frame').setView([20.95575, 84.47108], 15);
-   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-     maxZoom: 19,
+   // OSM France mirror - same classic OpenStreetMap look, no API key required
+   L.tileLayer('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png', {
+     maxZoom: 20,
+     subdomains: 'abc',
      attribution: '&copy; OpenStreetMap contributors'
    }).addTo(map);
  }
