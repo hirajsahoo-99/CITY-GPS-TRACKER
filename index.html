@@ -15,11 +15,64 @@ body {
 }
 h2 {
   color: #333;
-  border-bottom: 2px solid #007bff;
-  padding-bottom: 10px;
+  padding-bottom: 0;
   font-size: 20px;
+  margin: 0 0 15px 0;
+}
+/* PROFESSIONAL STATS BAR -- cards are permanent DOM nodes; only their .stat-value
+   text/class ever changes on refresh, so the boxes themselves never re-render
+   or flicker, and value changes fade in smoothly via .value-flash. */
+.stats-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-bottom: 15px;
 }
+.stat-card {
+  background: #ffffff;
+  border-radius: 5px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  border-left: 3px solid #007bff;
+  padding: 4px 10px;
+  min-width: 0;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  transition: border-color 0.3s ease;
+}
+.stat-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: #8a94a3;
+  font-weight: 600;
+  margin-bottom: 1px;
+}
+.stat-value {
+  font-size: 13px;
+  font-weight: 700;
+  color: #2c3e50;
+  transition: color 0.3s ease;
+}
+.stat-unit {
+  font-size: 10px;
+  font-weight: 500;
+  color: #8a94a3;
+  margin-left: 2px;
+}
+.stat-value.value-flash { animation: valueFlash 0.5s ease; }
+@keyframes valueFlash {
+  0% { opacity: 0.35; }
+  100% { opacity: 1; }
+}
+/* State colors -- toggled on the card itself, never on innerHTML, so no rebuild */
+#status-card.live { border-left-color: #28a745; }
+#status-card.live .stat-value { color: #28a745; }
+#status-card.error { border-left-color: #dc3545; }
+#status-card.error .stat-value { color: #dc3545; }
+#vehicle-card.connected { border-left-color: #28a745; }
+#vehicle-card.connected .stat-value { color: #28a745; }
+#vehicle-card.disconnected { border-left-color: #dc3545; }
+#vehicle-card.disconnected .stat-value { color: #dc3545; }
 .feeds-grid {
   display: flex;
   gap: 15px;
@@ -69,37 +122,6 @@ h2 {
   width: 100%;
   height: 100%;
 }
-.status-badge {
-  display: inline-block;
-  padding: 2px 6px;
-  font-size: 11px;
-  border-radius: 4px;
-  background: #e2e8f0;
-  font-weight: normal;
-  float: right;
-  margin-top: 5px;
-}
-.status-badge.error {
-  background: #f8d7da;
-  color: #842029;
-  font-weight: bold;
-}
-/* VEHICLE CONNECTION STATUS BADGE */
-.vehicle-badge {
-  display: inline-block;
-  padding: 2px 6px;
-  font-size: 11px;
-  border-radius: 4px;
-  font-weight: bold;
-  float: right;
-  margin-top: 5px;
-  margin-right: 8px;
-  color: #fff;
-  background: #6c757d;
-}
-.v-connected { background-color: #28a745; }
-.v-disconnected { background-color: #dc3545; }
-
 /* CAR ICON MARKER (top-view car, replaces default Leaflet pin, rotates with heading) */
 .car-icon-marker {
   filter: drop-shadow(0 2px 2px rgba(0,0,0,0.4));
@@ -178,11 +200,25 @@ h2 {
 </style>
 </head>
 <body>
-<h2>
-<span id="channel-name">Connecting to GPS...</span>
-<span class="status-badge" id="status">Live Tracking</span>
-<span class="vehicle-badge" id="vehicle-status">Checking...</span>
-</h2>
+<h2 id="channel-name">Connecting to GPS...</h2>
+<div class="stats-bar">
+  <div class="stat-card" id="status-card">
+    <div class="stat-label">Status</div>
+    <div class="stat-value" id="status">Live Tracking</div>
+  </div>
+  <div class="stat-card" id="vehicle-card">
+    <div class="stat-label">Vehicle</div>
+    <div class="stat-value" id="vehicle-status">Checking...</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Top Speed</div>
+    <div class="stat-value"><span id="top-speed-value">0</span><span class="stat-unit">km/h</span></div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Total Distance</div>
+    <div class="stat-value"><span id="total-distance-value">0.0</span><span class="stat-unit">km</span></div>
+  </div>
+</div>
 <!-- 1. Latitude/Longitude Display Area -->
 <div id="feeds-container" class="feeds-grid">Loading coordinates...</div>
 <!-- 2. Leaflet Map (shows trajectory path) -->
@@ -231,6 +267,31 @@ const MAP_STYLES = [
 ];
 const tileLayerCache = {}; // styleId -> L.tileLayer instance, built lazily on first use
 let currentStyleId = 'openstreetmap';
+
+// Updates a stat card's value text WITHOUT touching the surrounding box/DOM
+// structure. No-ops when the text hasn't actually changed (avoids pointless
+// flashes), and briefly re-triggers the CSS fade-in animation when it has, so
+// numbers/status change smoothly in place instead of the card re-rendering.
+function setStatValue(el, text) {
+  if (!el || el.textContent === text) return;
+  el.textContent = text;
+  el.classList.remove('value-flash');
+  void el.offsetWidth; // restart the CSS animation
+  el.classList.add('value-flash');
+}
+
+// Great-circle distance in km between two lat/lng points (Haversine formula).
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const toRad = d => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2 +
+            Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+let topSpeedKmh = 0; // highest speed reading seen so far this session -- never decreases
 let map = null;
 let pathLine = null;
 let startMarker = null;
@@ -313,8 +374,10 @@ function getOrCreateTileLayer(styleId) {
     if (!tileErrorShown) {
       tileErrorShown = true;
       document.getElementById('tile-warning').style.display = 'block';
-      document.getElementById('status').textContent = "Map Error";
-      document.getElementById('status').className = "status-badge error";
+      const statusCard = document.getElementById('status-card');
+      setStatValue(document.getElementById('status'), "Map Error");
+      statusCard.classList.remove('live');
+      statusCard.classList.add('error');
     }
   });
   layer.on('tileload', function() {
@@ -381,8 +444,6 @@ function firebaseToFeedsFormat(fbData) {
 }
 
 function fetchAndRenderData() {
-document.getElementById('status').textContent = "Updating...";
-document.getElementById('status').className = "status-badge";
 fetch(url)
 .then(response => response.json())
 .then(fbData => {
@@ -392,8 +453,9 @@ const container = document.getElementById('feeds-container');
 container.innerHTML = '';
 if (!data.feeds || data.feeds.length === 0) {
 container.innerHTML = "No GPS feeds available.";
-document.getElementById('vehicle-status').textContent = "Disconnected";
-document.getElementById('vehicle-status').className = "vehicle-badge v-disconnected";
+setStatValue(document.getElementById('vehicle-status'), "Disconnected");
+document.getElementById('vehicle-card').classList.remove('connected');
+document.getElementById('vehicle-card').classList.add('disconnected');
 return;
 }
 // ---- Build the trajectory point list (valid lat/lng only) ----
@@ -405,8 +467,25 @@ data.feeds.forEach(f => {
  trackPoints.push([la, lo]);
  }
 });
-// Cards: sirf latest 2 feeds dikhate hain (jaisa pehle tha)
-const cardsToShow = data.feeds.slice(-2);
+// ---- Top Speed / Total Distance stats ----
+// Top speed: highest reading seen so far this session (never decreases, even
+// once older high-speed points drop out of the 200-entry Firebase window).
+let maxSpeedInWindow = 0;
+data.feeds.forEach(f => {
+  const s = parseFloat(f.field3);
+  if (!isNaN(s) && s > maxSpeedInWindow) maxSpeedInWindow = s;
+});
+topSpeedKmh = Math.max(topSpeedKmh, maxSpeedInWindow);
+setStatValue(document.getElementById('top-speed-value'), Math.round(topSpeedKmh).toString());
+// Total distance: sum of point-to-point distances across the currently
+// available history window (up to the last 200 fixes).
+let distanceKm = 0;
+for (let i = 1; i < trackPoints.length; i++) {
+  distanceKm += haversineKm(trackPoints[i - 1][0], trackPoints[i - 1][1], trackPoints[i][0], trackPoints[i][1]);
+}
+setStatValue(document.getElementById('total-distance-value'), distanceKm.toFixed(1));
+// Card: sirf latest feed dikhate hain (second/purana box hata diya)
+const cardsToShow = data.feeds.slice(-1);
 for (let i = cardsToShow.length - 1; i >= 0; i--) {
 const feed = cardsToShow[i];
 // Custom Date & HH.MM AM/PM Format Converter
@@ -488,25 +567,33 @@ const latestFeed = data.feeds[data.feeds.length - 1];
 const lastPingTime = new Date(latestFeed.created_at).getTime();
 const currentTime = new Date().getTime();
 const diffMinutes = (currentTime - lastPingTime) / (1000 * 60);
-const vehicleStatusEl = document.getElementById('vehicle-status');
+const vehicleCard = document.getElementById('vehicle-card');
 if (diffMinutes <= 3) {
-vehicleStatusEl.textContent = "Vehicle Connected";
-vehicleStatusEl.className = "vehicle-badge v-connected";
+  setStatValue(document.getElementById('vehicle-status'), "Connected");
+  vehicleCard.classList.remove('disconnected');
+  vehicleCard.classList.add('connected');
 } else {
-vehicleStatusEl.textContent = "Vehicle Disconnected";
-vehicleStatusEl.className = "vehicle-badge v-disconnected";
+  setStatValue(document.getElementById('vehicle-status'), "Disconnected");
+  vehicleCard.classList.remove('connected');
+  vehicleCard.classList.add('disconnected');
 }
 if (!tileErrorShown) {
-  document.getElementById('status').textContent = "Live";
-  document.getElementById('status').className = "status-badge";
+  const statusCard = document.getElementById('status-card');
+  setStatValue(document.getElementById('status'), "Live");
+  statusCard.classList.remove('error');
+  statusCard.classList.add('live');
 }
 })
 .catch(error => {
 console.error("App layer execution exception:", error);
-document.getElementById('status').textContent = "Offline / Error";
-document.getElementById('status').className = "status-badge error";
-document.getElementById('vehicle-status').textContent = "Disconnected";
-document.getElementById('vehicle-status').className = "vehicle-badge v-disconnected";
+const statusCard = document.getElementById('status-card');
+setStatValue(document.getElementById('status'), "Offline");
+statusCard.classList.remove('live');
+statusCard.classList.add('error');
+const vehicleCard = document.getElementById('vehicle-card');
+setStatValue(document.getElementById('vehicle-status'), "Disconnected");
+vehicleCard.classList.remove('connected');
+vehicleCard.classList.add('disconnected');
 });
 }
 // Startup render call
