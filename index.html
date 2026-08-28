@@ -78,10 +78,11 @@ h2 {
   font-weight: normal;
   float: right;
   margin-top: 5px;
-  margin-right: 8px;
-  min-width: 62px;
-  text-align: center;
-  box-sizing: border-box;
+}
+.status-badge.error {
+  background: #f8d7da;
+  color: #842029;
+  font-weight: bold;
 }
 /* VEHICLE CONNECTION STATUS BADGE */
 .vehicle-badge {
@@ -95,9 +96,6 @@ h2 {
   margin-right: 8px;
   color: #fff;
   background: #6c757d;
-  min-width: 130px;
-  text-align: center;
-  box-sizing: border-box;
 }
 .v-connected { background-color: #28a745; }
 .v-disconnected { background-color: #dc3545; }
@@ -134,37 +132,27 @@ h2 {
 #recenter-btn:hover { background: #f0f0f0; }
 #recenter-btn svg { width: 18px; height: 18px; }
 
-/* MAP / SATELLITE TOGGLE BUTTON (sits right below the recenter button,
-   styled to match Leaflet's own +/- zoom control look) */
-#layer-toggle-btn {
+/* TILE LOAD WARNING BANNER (shown over map if MapTiler tiles fail, e.g. domain-restricted key) */
+#tile-warning {
   position: absolute;
-  top: 48px;
-  right: 10px;
+  bottom: 8px;
+  left: 8px;
+  right: 8px;
   z-index: 1000;
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  border: 2px solid rgba(0,0,0,0.2);
-  background-clip: padding-box;
-  border-radius: 4px;
-  background: #ffffff;
-  box-shadow: 0 1px 5px rgba(0,0,0,0.4);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  background: rgba(220, 53, 69, 0.92);
+  color: #fff;
+  font-size: 11px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  display: none;
 }
-#layer-toggle-btn:hover { background: #f4f4f4; }
-#layer-toggle-btn svg { width: 16px; height: 16px; }
 </style>
 </head>
 <body>
 <h2>
 <span id="channel-name">Connecting to GPS...</span>
-<span class="vehicle-badge" id="vehicle-status">Checking...</span>
-<span class="status-badge" id="highest-speed-badge">-- km/h</span>
-<span class="status-badge" id="distance-badge">-- km</span>
 <span class="status-badge" id="status">Live Tracking</span>
+<span class="vehicle-badge" id="vehicle-status">Checking...</span>
 </h2>
 <!-- 1. Latitude/Longitude Display Area -->
 <div id="feeds-container" class="feeds-grid">Loading coordinates...</div>
@@ -182,12 +170,7 @@ h2 {
     <path d="M21 21v-4.5M21 21h-4.5" stroke="#333" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
   </svg>
 </button>
-<button id="layer-toggle-btn" title="Switch map / satellite view">
-  <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M12 3L2 8l10 5 10-5-10-5z" stroke="#333" stroke-width="1.6" stroke-linejoin="round"/>
-    <path d="M2 13l10 5 10-5" stroke="#333" stroke-width="1.6" stroke-linejoin="round"/>
-  </svg>
-</button>
+<div id="tile-warning">Map tiles blocked — check your MapTiler API key's allowed domains.</div>
 </div>
 <script>
 // ---------------------------------------------------------------------------
@@ -208,18 +191,16 @@ let startMarker = null;
 let liveMarker = null;
 let hasAutoFitted = false; // ensures we only auto zoom/pan on the very first load
 let lastPathBounds = null; // remembers latest trajectory bounds for the recenter button
+let tileErrorShown = false; // avoid spamming the warning banner on every failed tile
+let followMode = true; // true = map keeps auto-panning to follow the car every update
+let lastKnownPoint = null; // most recent car position, used when recenter button re-enables follow
 
-// AUTO-FOLLOW: jab tak user khud map ko drag/zoom nahi karta, map hamesha
-// latest car position ke peeche-peeche move karta rahega, isliye car icon
-// ab visible box se "bahar" nahi jayega. User manual pan/zoom kare to
-// auto-follow ruk jaata hai jab tak wo Recenter button dobara na dabaye.
-let autoFollow = true;
-
-// Re-center button: jab click ho, map ko latest trajectory par wapas fit karo
-// aur auto-follow dobara on kar do.
+// Re-center button: jab click ho, follow mode wapas ON kar do aur turant latest point par snap karo
 document.getElementById('recenter-btn').addEventListener('click', function() {
-  autoFollow = true;
-  if (map && lastPathBounds) {
+  followMode = true;
+  if (map && lastKnownPoint) {
+    map.panTo(lastKnownPoint, { animate: true });
+  } else if (map && lastPathBounds) {
     map.fitBounds(lastPathBounds, { padding: [30, 30] });
   }
 });
@@ -264,94 +245,50 @@ function computeBearing(latA, lonA, latB, lonB) {
   return (toDeg(Math.atan2(y, x)) + 360) % 360;
 }
 
-// Distance in km between two lat/lng points (haversine formula)
-function haversineDistanceKm(lat1, lon1, lat2, lon2) {
-  const toRad = d => d * Math.PI / 180;
-  const R = 6371; // Earth radius in km
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-  const a = Math.sin(dLat / 2) ** 2 +
-            Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
 let lastHeading = 0; // keeps the car facing its last known direction if no new movement
-
-// TWO SWITCHABLE BASE LAYERS -- dono hi free hain, koi API key nahi chahiye.
-// Road layer: standard OpenStreetMap tiles.
-// Satellite layer: Esri World Imagery (free, no key, live-served -- not a
-// redownload/redistribution of Google's imagery, so no ToS issue).
-// FIX: Esri's "Reference/World_Transportation" overlay roads didn't line up
-// correctly with real roads in this area (Esri's own road data is less
-// accurate/updated here than OpenStreetMap's). MapTiler's "Hybrid" style
-// instead bakes roads straight from OpenStreetMap data onto the satellite
-// imagery -- the same road data our normal road-map view already shows
-// correctly -- so roads line up properly.
-//
-// >>> Get a free key at https://cloud.maptiler.com/ (sign up -> Account ->
-// Keys) and paste it below. Free tier covers ~100k tile loads/month. <<<
-const MAPTILER_KEY = "uqDjOTcIKm28iF924vhH";
-
-let roadLayer = null;
-let satelliteLayer = null;
-let satelliteLabelsOverlay = null; // auto-shows ALL village/place names from OSM data on top of satellite -- scales to every place, no manual entry needed
-let isSatelliteView = false;
 
 function initMapIfNeeded() {
  if (map) return;
  map = L.map('live-map-frame').setView([20.95575, 84.47108], 15);
-
- roadLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
- maxZoom: 19,
- subdomains: ['a', 'b', 'c'],
- attribution: '&copy; OpenStreetMap contributors'
- });
-
- satelliteLayer = L.tileLayer(`https://api.maptiler.com/maps/hybrid/{z}/{x}/{y}.jpg?key=${MAPTILER_KEY}`, {
+ // MapTiler tiles (OpenStreetMap style) using your free API key - permanent, app-friendly
+ const tileLayer = L.tileLayer('https://api.maptiler.com/maps/openstreetmap/{z}/{x}/{y}.png?key=uqDjOTcIKm28iF924vhH', {
  maxZoom: 20,
  attribution: '&copy; MapTiler &copy; OpenStreetMap contributors'
+ }).addTo(map);
+ // Detect blocked/failed tiles (common cause: MapTiler key restricted to a different domain).
+ // Roads/labels simply won't render in that case, leaving only the plain background color.
+ tileLayer.on('tileerror', function() {
+   if (!tileErrorShown) {
+     tileErrorShown = true;
+     document.getElementById('tile-warning').style.display = 'block';
+     document.getElementById('status').textContent = "Map Error";
+     document.getElementById('status').className = "status-badge error";
+   }
  });
-
- // FIX: uses the SAME OpenStreetMap data as our normal road-map view (which
- // already shows every village name correctly and automatically -- no
- // manual per-village entry needed) as a semi-transparent overlay on top of
- // the satellite imagery. Plain opacity (not a blend mode) keeps the text
- // fully legible even over dark forest/water areas, where the earlier blend
- // mode made the text too dark to read.
- satelliteLabelsOverlay = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
- maxZoom: 19,
- subdomains: ['a', 'b', 'c'],
- opacity: 0.55
+ tileLayer.on('tileload', function() {
+   // A tile loaded fine after all -> hide any stale warning
+   if (tileErrorShown) {
+     tileErrorShown = false;
+     document.getElementById('tile-warning').style.display = 'none';
+   }
  });
+ // Leaflet sometimes computes the container size before layout/CSS fully settles;
+ // force a resize check shortly after init so tiles/markers align correctly.
+ setTimeout(() => map.invalidateSize(), 200);
+ window.addEventListener('resize', () => map.invalidateSize());
 
- // Default view: roads
- roadLayer.addTo(map);
-
- // Agar user khud map ko drag ya scroll-zoom kare, to auto-follow band kar do
- // (taaki uska manual pan/zoom baar-baar disturb na ho).
- map.on('dragstart', function() { autoFollow = false; });
- map.getContainer().addEventListener('wheel', function() { autoFollow = false; });
- map.on('zoomstart', function() {
-   if (hasAutoFitted) { autoFollow = false; }
- });
+ // FIX: auto-follow the car every update UNTIL the user manually drags/zooms/scrolls.
+ // We listen on the raw DOM container (mousedown/touchstart/wheel/dblclick) instead of
+ // Leaflet's semantic 'dragstart'/'zoomstart' events, because those also fire for our
+ // own programmatic panTo()/fitBounds() calls -- raw input events only fire for a real
+ // user gesture, so they don't get confused with the follow-logic's own map movements.
+ const mapContainer = map.getContainer();
+ const disableFollow = () => { followMode = false; };
+ mapContainer.addEventListener('mousedown', disableFollow);
+ mapContainer.addEventListener('touchstart', disableFollow, { passive: true });
+ mapContainer.addEventListener('wheel', disableFollow, { passive: true });
+ mapContainer.addEventListener('dblclick', disableFollow);
 }
-
-// Map / Satellite toggle button click handler
-document.getElementById('layer-toggle-btn').addEventListener('click', function() {
-  if (!map) return;
-  isSatelliteView = !isSatelliteView;
-  if (isSatelliteView) {
-    map.removeLayer(roadLayer);
-    satelliteLayer.addTo(map);
-    satelliteLabelsOverlay.addTo(map); // village/place names on top of imagery
-    this.title = "Switch to road map";
-  } else {
-    map.removeLayer(satelliteLayer);
-    map.removeLayer(satelliteLabelsOverlay);
-    roadLayer.addTo(map);
-    this.title = "Switch to satellite view";
-  }
-});
 
 // Converts the raw Firebase gps_history object ({pushKey: {lat,lng,speed,ts}, ...})
 // into the same {channel, feeds:[{field1,field2,field3,created_at}, ...]} shape the
@@ -373,6 +310,8 @@ function firebaseToFeedsFormat(fbData) {
 }
 
 function fetchAndRenderData() {
+document.getElementById('status').textContent = "Updating...";
+document.getElementById('status').className = "status-badge";
 fetch(url)
 .then(response => response.json())
 .then(fbData => {
@@ -395,22 +334,6 @@ data.feeds.forEach(f => {
  trackPoints.push([la, lo]);
  }
 });
-// ---- Total distance travelled (sum of distances between consecutive points) ----
-let totalDistanceKm = 0;
-for (let i = 1; i < trackPoints.length; i++) {
-  totalDistanceKm += haversineDistanceKm(
-    trackPoints[i - 1][0], trackPoints[i - 1][1],
-    trackPoints[i][0], trackPoints[i][1]
-  );
-}
-document.getElementById('distance-badge').textContent = totalDistanceKm.toFixed(2) + " km";
-// ---- Highest speed recorded across all feeds ----
-let highestSpeed = 0;
-data.feeds.forEach(f => {
-  const spd = parseFloat(f.field3);
-  if (!isNaN(spd) && spd > highestSpeed) { highestSpeed = spd; }
-});
-document.getElementById('highest-speed-badge').textContent = Math.round(highestSpeed) + " km/h";
 // Cards: sirf latest 2 feeds dikhate hain (jaisa pehle tha)
 const cardsToShow = data.feeds.slice(-2);
 for (let i = cardsToShow.length - 1; i >= 0; i--) {
@@ -475,16 +398,17 @@ if (trackPoints.length > 0) {
  }
  if (liveMarker) { map.removeLayer(liveMarker); }
  liveMarker = L.marker(lastPoint, { icon: getCarIcon(lastHeading) }).addTo(map).bindPopup("Latest position");
- // Remember bounds for the manual re-center button
+ // Remember bounds/point for the manual re-center button
  lastPathBounds = pathLine.getBounds();
- // Fit map to show the whole path -- ONLY on the very first load.
- // Baad ke refreshes par map ko touch nahi karte (agar user ne khud pan/zoom
- // kar rakha ho), LEKIN agar autoFollow on hai to car ko view mein rakhte
- // hain taaki wo box se bahar na nikal jaaye.
+ lastKnownPoint = lastPoint;
+ // Fit map to show the whole path on the very first load only.
  if (!hasAutoFitted) {
    map.fitBounds(lastPathBounds, { padding: [30, 30] });
    hasAutoFitted = true;
- } else if (autoFollow) {
+ } else if (followMode) {
+   // FIX: keep following the car on every update (pan only, never re-zoom) so it
+   // never drifts outside the visible area. Stops automatically the moment the
+   // user drags/zooms/scrolls the map themselves; resumes on Recenter tap.
    map.panTo(lastPoint, { animate: true });
  }
 }
@@ -501,18 +425,22 @@ vehicleStatusEl.className = "vehicle-badge v-connected";
 vehicleStatusEl.textContent = "Vehicle Disconnected";
 vehicleStatusEl.className = "vehicle-badge v-disconnected";
 }
-document.getElementById('status').textContent = "Live";
+if (!tileErrorShown) {
+  document.getElementById('status').textContent = "Live";
+  document.getElementById('status').className = "status-badge";
+}
 })
 .catch(error => {
 console.error("App layer execution exception:", error);
 document.getElementById('status').textContent = "Offline / Error";
+document.getElementById('status').className = "status-badge error";
 document.getElementById('vehicle-status').textContent = "Disconnected";
 document.getElementById('vehicle-status').className = "vehicle-badge v-disconnected";
 });
 }
 // Startup render call
 fetchAndRenderData();
-// 2 seconds real-time auto-refresh loop
+// 15 seconds real-time auto-refresh loop
 setInterval(fetchAndRenderData, 2000);
 </script>
 </body>
