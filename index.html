@@ -152,9 +152,16 @@ h2 {
 </button>
 </div>
 <script>
-// ThingSpeak API Endpoint URL
-// NOTE: results ko badha diya hai (2 se 50) taaki trajectory ke liye enough points milein
-const url = "https://api.thingspeak.com/channels/3462965/feeds.json?api_key=B4BANQ7KTNALDOBP&results=50";
+// ---------------------------------------------------------------------------
+// DATA SOURCE: Firebase Realtime Database (was ThingSpeak before -- swapped
+// out here, nothing else in this file touched). orderBy="$key" + limitToLast
+// works because Firebase push keys are chronologically sortable, so this
+// gives us the most recent N fixes just like the old ThingSpeak "results=50"
+// param did.
+const FIREBASE_HOST = "city-gps-tracker-default-rtdb.asia-southeast1.firebasedatabase.app";
+const FIREBASE_PATH = "/gps_history.json";
+const url = `https://${FIREBASE_HOST}${FIREBASE_PATH}?orderBy=%22$key%22&limitToLast=200`;
+// ---------------------------------------------------------------------------
 
 // Leaflet map init (ek hi baar)
 let map = null;
@@ -223,11 +230,31 @@ function initMapIfNeeded() {
  }).addTo(map);
 }
 
+// Converts the raw Firebase gps_history object ({pushKey: {lat,lng,speed,ts}, ...})
+// into the same {channel, feeds:[{field1,field2,field3,created_at}, ...]} shape the
+// rest of this file was already written to expect (field1=lat, field2=lng,
+// field3=speed, created_at=timestamp) -- so nothing below this needs to change.
+function firebaseToFeedsFormat(fbData) {
+  if (!fbData) return { channel: { name: "City GPS Tracker" }, feeds: [] };
+  const keys = Object.keys(fbData).sort(); // push keys sort chronologically
+  const feeds = keys.map(k => {
+    const entry = fbData[k];
+    return {
+      field1: String(entry.lat),
+      field2: String(entry.lng),
+      field3: String(entry.speed),
+      created_at: new Date(entry.ts).toISOString()
+    };
+  });
+  return { channel: { name: "City GPS Tracker" }, feeds };
+}
+
 function fetchAndRenderData() {
 document.getElementById('status').textContent = "Updating...";
 fetch(url)
 .then(response => response.json())
-.then(data => {
+.then(fbData => {
+const data = firebaseToFeedsFormat(fbData);
 document.getElementById('channel-name').textContent = data.channel.name;
 const container = document.getElementById('feeds-container');
 container.innerHTML = '';
@@ -345,7 +372,7 @@ document.getElementById('vehicle-status').className = "vehicle-badge v-disconnec
 // Startup render call
 fetchAndRenderData();
 // 15 seconds real-time auto-refresh loop
-setInterval(fetchAndRenderData, 15000);
+setInterval(fetchAndRenderData, 2000);
 </script>
 </body>
 </html>
