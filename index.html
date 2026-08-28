@@ -132,6 +132,35 @@ h2 {
 #recenter-btn:hover { background: #f0f0f0; }
 #recenter-btn svg { width: 18px; height: 18px; }
 
+/* HYBRID / STREET MAP STYLE TOGGLE (sits directly below recenter button) */
+#style-toggle-btn {
+  position: absolute;
+  top: 48px;
+  right: 10px;
+  z-index: 1000;
+  width: 30px;
+  height: 30px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: #ffffff;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+#style-toggle-btn:hover { background: #f0f0f0; }
+#style-toggle-btn svg { width: 18px; height: 18px; }
+#style-toggle-btn.hybrid-active {
+  background: #2c3e50;
+  border-color: #2c3e50;
+}
+#style-toggle-btn.hybrid-active svg polygon,
+#style-toggle-btn.hybrid-active svg path {
+  stroke: #ffffff;
+}
+
 /* TILE LOAD WARNING BANNER (shown over map if MapTiler tiles fail, e.g. domain-restricted key) */
 #tile-warning {
   position: absolute;
@@ -170,6 +199,13 @@ h2 {
     <path d="M21 21v-4.5M21 21h-4.5" stroke="#333" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
   </svg>
 </button>
+<button id="style-toggle-btn" title="Toggle Hybrid / Street view">
+  <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <polygon points="12,3 21,8 12,13 3,8" stroke="#333" stroke-width="1.6" stroke-linejoin="round"/>
+    <path d="M3 12 L12 17 L21 12" stroke="#333" stroke-width="1.6" stroke-linejoin="round"/>
+    <path d="M3 16 L12 21 L21 16" stroke="#333" stroke-width="1.6" stroke-linejoin="round"/>
+  </svg>
+</button>
 <div id="tile-warning">Map tiles blocked — check your MapTiler API key's allowed domains.</div>
 </div>
 <script>
@@ -185,6 +221,16 @@ const url = `https://${FIREBASE_HOST}${FIREBASE_PATH}?orderBy=%22$key%22&limitTo
 // ---------------------------------------------------------------------------
 
 // Leaflet map init (ek hi baar)
+const MAPTILER_KEY = "uqDjOTcIKm28iF924vhH"; // same key used for every style below
+
+// The two MapTiler raster styles in use, same key for both. "hybrid" = satellite
+// imagery WITH roads/labels drawn on top (plain "satellite" would have no roads).
+const MAP_STYLES = [
+  { id: 'openstreetmap', label: 'Streets (OSM)', ext: 'png' },
+  { id: 'hybrid',        label: 'Hybrid (Satellite+Roads)', ext: 'jpg' }
+];
+const tileLayerCache = {}; // styleId -> L.tileLayer instance, built lazily on first use
+let currentStyleId = 'openstreetmap';
 let map = null;
 let pathLine = null;
 let startMarker = null;
@@ -203,6 +249,13 @@ document.getElementById('recenter-btn').addEventListener('click', function() {
   } else if (map && lastPathBounds) {
     map.fitBounds(lastPathBounds, { padding: [30, 30] });
   }
+});
+
+// Style toggle button: single click flips between Street (OSM) and Hybrid.
+document.getElementById('style-toggle-btn').addEventListener('click', function() {
+  const nextStyleId = currentStyleId === 'openstreetmap' ? 'hybrid' : 'openstreetmap';
+  switchMapStyle(nextStyleId);
+  this.classList.toggle('hybrid-active', nextStyleId === 'hybrid');
 });
 
 // Top-view car SVG. Default artwork points "up" (north = 0deg heading).
@@ -247,31 +300,49 @@ function computeBearing(latA, lonA, latB, lonB) {
 
 let lastHeading = 0; // keeps the car facing its last known direction if no new movement
 
+// Builds (or reuses from cache) the L.tileLayer for a given MapTiler style id,
+// wiring up the shared tile-error/tile-load warning banner the first time.
+function getOrCreateTileLayer(styleId) {
+  if (tileLayerCache[styleId]) return tileLayerCache[styleId];
+  const style = MAP_STYLES.find(s => s.id === styleId);
+  const layer = L.tileLayer(
+    `https://api.maptiler.com/maps/${style.id}/{z}/{x}/{y}.${style.ext}?key=${MAPTILER_KEY}`,
+    { maxZoom: 20, attribution: '&copy; MapTiler &copy; OpenStreetMap contributors' }
+  );
+  layer.on('tileerror', function() {
+    if (!tileErrorShown) {
+      tileErrorShown = true;
+      document.getElementById('tile-warning').style.display = 'block';
+      document.getElementById('status').textContent = "Map Error";
+      document.getElementById('status').className = "status-badge error";
+    }
+  });
+  layer.on('tileload', function() {
+    if (tileErrorShown) {
+      tileErrorShown = false;
+      document.getElementById('tile-warning').style.display = 'none';
+    }
+  });
+  tileLayerCache[styleId] = layer;
+  return layer;
+}
+
+// Swaps the active base layer. Only touches the tile layer -- path/markers/zoom/
+// pan are never affected, so switching styles never disturbs follow mode etc.
+function switchMapStyle(styleId) {
+  if (!map || styleId === currentStyleId) return;
+  const oldLayer = tileLayerCache[currentStyleId];
+  if (oldLayer && map.hasLayer(oldLayer)) map.removeLayer(oldLayer);
+  const newLayer = getOrCreateTileLayer(styleId);
+  newLayer.addTo(map);
+  currentStyleId = styleId;
+}
+
 function initMapIfNeeded() {
  if (map) return;
  map = L.map('live-map-frame').setView([20.95575, 84.47108], 15);
- // MapTiler tiles (OpenStreetMap style) using your free API key - permanent, app-friendly
- const tileLayer = L.tileLayer('https://api.maptiler.com/maps/openstreetmap/{z}/{x}/{y}.png?key=uqDjOTcIKm28iF924vhH', {
- maxZoom: 20,
- attribution: '&copy; MapTiler &copy; OpenStreetMap contributors'
- }).addTo(map);
- // Detect blocked/failed tiles (common cause: MapTiler key restricted to a different domain).
- // Roads/labels simply won't render in that case, leaving only the plain background color.
- tileLayer.on('tileerror', function() {
-   if (!tileErrorShown) {
-     tileErrorShown = true;
-     document.getElementById('tile-warning').style.display = 'block';
-     document.getElementById('status').textContent = "Map Error";
-     document.getElementById('status').className = "status-badge error";
-   }
- });
- tileLayer.on('tileload', function() {
-   // A tile loaded fine after all -> hide any stale warning
-   if (tileErrorShown) {
-     tileErrorShown = false;
-     document.getElementById('tile-warning').style.display = 'none';
-   }
- });
+ getOrCreateTileLayer(currentStyleId).addTo(map); // default style on first load
+
  // Leaflet sometimes computes the container size before layout/CSS fully settles;
  // force a resize check shortly after init so tiles/markers align correctly.
  setTimeout(() => map.invalidateSize(), 200);
