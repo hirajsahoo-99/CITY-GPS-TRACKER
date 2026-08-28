@@ -24,9 +24,11 @@ h2 {
    or flicker, and value changes fade in smoothly via .value-flash. */
 .stats-bar {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow-x: auto;
   gap: 8px;
   margin-bottom: 15px;
+  padding-bottom: 2px;
 }
 .stat-card {
   background: #ffffff;
@@ -36,6 +38,7 @@ h2 {
   padding: 4px 10px;
   min-width: 0;
   flex: 0 0 auto;
+  white-space: nowrap;
   box-sizing: border-box;
   transition: border-color 0.3s ease;
 }
@@ -200,7 +203,6 @@ h2 {
 </style>
 </head>
 <body>
-<h2 id="channel-name">Connecting to GPS...</h2>
 <div class="stats-bar">
   <div class="stat-card" id="status-card">
     <div class="stat-label">Status</div>
@@ -448,7 +450,6 @@ fetch(url)
 .then(response => response.json())
 .then(fbData => {
 const data = firebaseToFeedsFormat(fbData);
-document.getElementById('channel-name').textContent = data.channel.name;
 const container = document.getElementById('feeds-container');
 container.innerHTML = '';
 if (!data.feeds || data.feeds.length === 0) {
