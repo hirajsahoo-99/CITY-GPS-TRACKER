@@ -78,6 +78,10 @@ h2 {
   font-weight: normal;
   float: right;
   margin-top: 5px;
+  margin-right: 8px;
+  min-width: 62px;
+  text-align: center;
+  box-sizing: border-box;
 }
 /* VEHICLE CONNECTION STATUS BADGE */
 .vehicle-badge {
@@ -91,6 +95,9 @@ h2 {
   margin-right: 8px;
   color: #fff;
   background: #6c757d;
+  min-width: 130px;
+  text-align: center;
+  box-sizing: border-box;
 }
 .v-connected { background-color: #28a745; }
 .v-disconnected { background-color: #dc3545; }
@@ -126,13 +133,38 @@ h2 {
 }
 #recenter-btn:hover { background: #f0f0f0; }
 #recenter-btn svg { width: 18px; height: 18px; }
+
+/* MAP / SATELLITE TOGGLE BUTTON (sits right below the recenter button,
+   styled to match Leaflet's own +/- zoom control look) */
+#layer-toggle-btn {
+  position: absolute;
+  top: 48px;
+  right: 10px;
+  z-index: 1000;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 2px solid rgba(0,0,0,0.2);
+  background-clip: padding-box;
+  border-radius: 4px;
+  background: #ffffff;
+  box-shadow: 0 1px 5px rgba(0,0,0,0.4);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#layer-toggle-btn:hover { background: #f4f4f4; }
+#layer-toggle-btn svg { width: 16px; height: 16px; }
 </style>
 </head>
 <body>
 <h2>
 <span id="channel-name">Connecting to GPS...</span>
-<span class="status-badge" id="status">Live Tracking</span>
 <span class="vehicle-badge" id="vehicle-status">Checking...</span>
+<span class="status-badge" id="highest-speed-badge">-- km/h</span>
+<span class="status-badge" id="distance-badge">-- km</span>
+<span class="status-badge" id="status">Live Tracking</span>
 </h2>
 <!-- 1. Latitude/Longitude Display Area -->
 <div id="feeds-container" class="feeds-grid">Loading coordinates...</div>
@@ -148,6 +180,12 @@ h2 {
     <path d="M21 3v4.5M21 3h-4.5" stroke="#333" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
     <path d="M3 21v-4.5M3 21h4.5" stroke="#333" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
     <path d="M21 21v-4.5M21 21h-4.5" stroke="#333" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+</button>
+<button id="layer-toggle-btn" title="Switch map / satellite view">
+  <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M12 3L2 8l10 5 10-5-10-5z" stroke="#333" stroke-width="1.6" stroke-linejoin="round"/>
+    <path d="M2 13l10 5 10-5" stroke="#333" stroke-width="1.6" stroke-linejoin="round"/>
   </svg>
 </button>
 </div>
@@ -171,8 +209,16 @@ let liveMarker = null;
 let hasAutoFitted = false; // ensures we only auto zoom/pan on the very first load
 let lastPathBounds = null; // remembers latest trajectory bounds for the recenter button
 
+// AUTO-FOLLOW: jab tak user khud map ko drag/zoom nahi karta, map hamesha
+// latest car position ke peeche-peeche move karta rahega, isliye car icon
+// ab visible box se "bahar" nahi jayega. User manual pan/zoom kare to
+// auto-follow ruk jaata hai jab tak wo Recenter button dobara na dabaye.
+let autoFollow = true;
+
 // Re-center button: jab click ho, map ko latest trajectory par wapas fit karo
+// aur auto-follow dobara on kar do.
 document.getElementById('recenter-btn').addEventListener('click', function() {
+  autoFollow = true;
   if (map && lastPathBounds) {
     map.fitBounds(lastPathBounds, { padding: [30, 30] });
   }
@@ -218,17 +264,94 @@ function computeBearing(latA, lonA, latB, lonB) {
   return (toDeg(Math.atan2(y, x)) + 360) % 360;
 }
 
+// Distance in km between two lat/lng points (haversine formula)
+function haversineDistanceKm(lat1, lon1, lat2, lon2) {
+  const toRad = d => d * Math.PI / 180;
+  const R = 6371; // Earth radius in km
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2 +
+            Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 let lastHeading = 0; // keeps the car facing its last known direction if no new movement
+
+// TWO SWITCHABLE BASE LAYERS -- dono hi free hain, koi API key nahi chahiye.
+// Road layer: standard OpenStreetMap tiles.
+// Satellite layer: Esri World Imagery (free, no key, live-served -- not a
+// redownload/redistribution of Google's imagery, so no ToS issue).
+// FIX: Esri's "Reference/World_Transportation" overlay roads didn't line up
+// correctly with real roads in this area (Esri's own road data is less
+// accurate/updated here than OpenStreetMap's). MapTiler's "Hybrid" style
+// instead bakes roads straight from OpenStreetMap data onto the satellite
+// imagery -- the same road data our normal road-map view already shows
+// correctly -- so roads line up properly.
+//
+// >>> Get a free key at https://cloud.maptiler.com/ (sign up -> Account ->
+// Keys) and paste it below. Free tier covers ~100k tile loads/month. <<<
+const MAPTILER_KEY = "uqDjOTcIKm28iF924vhH";
+
+let roadLayer = null;
+let satelliteLayer = null;
+let satelliteLabelsOverlay = null; // auto-shows ALL village/place names from OSM data on top of satellite -- scales to every place, no manual entry needed
+let isSatelliteView = false;
 
 function initMapIfNeeded() {
  if (map) return;
  map = L.map('live-map-frame').setView([20.95575, 84.47108], 15);
- // MapTiler tiles (OpenStreetMap style) using your free API key - permanent, app-friendly
- L.tileLayer('https://api.maptiler.com/maps/openstreetmap/{z}/{x}/{y}.png?key=uqDjOTcIKm28iF924vhH', {
+
+ roadLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+ maxZoom: 19,
+ subdomains: ['a', 'b', 'c'],
+ attribution: '&copy; OpenStreetMap contributors'
+ });
+
+ satelliteLayer = L.tileLayer(`https://api.maptiler.com/maps/hybrid/{z}/{x}/{y}.jpg?key=${MAPTILER_KEY}`, {
  maxZoom: 20,
  attribution: '&copy; MapTiler &copy; OpenStreetMap contributors'
- }).addTo(map);
+ });
+
+ // FIX: uses the SAME OpenStreetMap data as our normal road-map view (which
+ // already shows every village name correctly and automatically -- no
+ // manual per-village entry needed) as a semi-transparent overlay on top of
+ // the satellite imagery. Plain opacity (not a blend mode) keeps the text
+ // fully legible even over dark forest/water areas, where the earlier blend
+ // mode made the text too dark to read.
+ satelliteLabelsOverlay = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+ maxZoom: 19,
+ subdomains: ['a', 'b', 'c'],
+ opacity: 0.55
+ });
+
+ // Default view: roads
+ roadLayer.addTo(map);
+
+ // Agar user khud map ko drag ya scroll-zoom kare, to auto-follow band kar do
+ // (taaki uska manual pan/zoom baar-baar disturb na ho).
+ map.on('dragstart', function() { autoFollow = false; });
+ map.getContainer().addEventListener('wheel', function() { autoFollow = false; });
+ map.on('zoomstart', function() {
+   if (hasAutoFitted) { autoFollow = false; }
+ });
 }
+
+// Map / Satellite toggle button click handler
+document.getElementById('layer-toggle-btn').addEventListener('click', function() {
+  if (!map) return;
+  isSatelliteView = !isSatelliteView;
+  if (isSatelliteView) {
+    map.removeLayer(roadLayer);
+    satelliteLayer.addTo(map);
+    satelliteLabelsOverlay.addTo(map); // village/place names on top of imagery
+    this.title = "Switch to road map";
+  } else {
+    map.removeLayer(satelliteLayer);
+    map.removeLayer(satelliteLabelsOverlay);
+    roadLayer.addTo(map);
+    this.title = "Switch to satellite view";
+  }
+});
 
 // Converts the raw Firebase gps_history object ({pushKey: {lat,lng,speed,ts}, ...})
 // into the same {channel, feeds:[{field1,field2,field3,created_at}, ...]} shape the
@@ -250,7 +373,6 @@ function firebaseToFeedsFormat(fbData) {
 }
 
 function fetchAndRenderData() {
-document.getElementById('status').textContent = "Updating...";
 fetch(url)
 .then(response => response.json())
 .then(fbData => {
@@ -273,6 +395,22 @@ data.feeds.forEach(f => {
  trackPoints.push([la, lo]);
  }
 });
+// ---- Total distance travelled (sum of distances between consecutive points) ----
+let totalDistanceKm = 0;
+for (let i = 1; i < trackPoints.length; i++) {
+  totalDistanceKm += haversineDistanceKm(
+    trackPoints[i - 1][0], trackPoints[i - 1][1],
+    trackPoints[i][0], trackPoints[i][1]
+  );
+}
+document.getElementById('distance-badge').textContent = totalDistanceKm.toFixed(2) + " km";
+// ---- Highest speed recorded across all feeds ----
+let highestSpeed = 0;
+data.feeds.forEach(f => {
+  const spd = parseFloat(f.field3);
+  if (!isNaN(spd) && spd > highestSpeed) { highestSpeed = spd; }
+});
+document.getElementById('highest-speed-badge').textContent = Math.round(highestSpeed) + " km/h";
 // Cards: sirf latest 2 feeds dikhate hain (jaisa pehle tha)
 const cardsToShow = data.feeds.slice(-2);
 for (let i = cardsToShow.length - 1; i >= 0; i--) {
@@ -340,11 +478,14 @@ if (trackPoints.length > 0) {
  // Remember bounds for the manual re-center button
  lastPathBounds = pathLine.getBounds();
  // Fit map to show the whole path -- ONLY on the very first load.
- // Baad ke refreshes par map ko touch nahi karte, taaki user ka manual zoom/pan
- // (ya jahan wo dekh raha hai) disturb na ho.
+ // Baad ke refreshes par map ko touch nahi karte (agar user ne khud pan/zoom
+ // kar rakha ho), LEKIN agar autoFollow on hai to car ko view mein rakhte
+ // hain taaki wo box se bahar na nikal jaaye.
  if (!hasAutoFitted) {
    map.fitBounds(lastPathBounds, { padding: [30, 30] });
    hasAutoFitted = true;
+ } else if (autoFollow) {
+   map.panTo(lastPoint, { animate: true });
  }
 }
 // Vehicle Connection Status Logic (Checking if latest ping is within 3 minutes)
@@ -371,7 +512,7 @@ document.getElementById('vehicle-status').className = "vehicle-badge v-disconnec
 }
 // Startup render call
 fetchAndRenderData();
-// 15 seconds real-time auto-refresh loop
+// 2 seconds real-time auto-refresh loop
 setInterval(fetchAndRenderData, 2000);
 </script>
 </body>
