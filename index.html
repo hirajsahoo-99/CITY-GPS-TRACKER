@@ -21,23 +21,24 @@ h2 {
 }
 /* PROFESSIONAL STATS BAR -- cards are permanent DOM nodes; only their .stat-value
    text/class ever changes on refresh, so the boxes themselves never re-render
-   or flicker, and value changes fade in smoothly via .value-flash.
-   FIX: always 4 columns in a single row, never wraps below, no horizontal
-   scroll needed either -- each card just shrinks to fit the screen width. */
+   or flicker, and value changes fade in smoothly via .value-flash. */
 .stats-bar {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  gap: 8px;
   margin-bottom: 15px;
+  padding-bottom: 2px;
 }
 .stat-card {
   background: #ffffff;
   border-radius: 5px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.08);
   border-left: 3px solid #007bff;
-  padding: 4px 6px;
+  padding: 4px 10px;
   min-width: 0;
-  overflow: hidden;
+  flex: 0 0 auto;
+  white-space: nowrap;
   box-sizing: border-box;
   transition: border-color 0.3s ease;
 }
@@ -48,18 +49,12 @@ h2 {
   color: #8a94a3;
   font-weight: 600;
   margin-bottom: 1px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 .stat-value {
   font-size: 13px;
   font-weight: 700;
   color: #2c3e50;
   transition: color 0.3s ease;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 .stat-unit {
   font-size: 10px;
@@ -210,6 +205,7 @@ h2 {
 </style>
 </head>
 <body>
+<h2>City GPS Tracker</h2>
 <div class="stats-bar">
   <div class="stat-card" id="status-card">
     <div class="stat-label">Status</div>
@@ -506,12 +502,29 @@ hours = hours % 12;
 hours = hours ? hours : 12;
 const hoursString = hours.toString().padStart(2, '0');
 const formattedTime = `${dateString}, ${hoursString}.${minutes} ${ampm}`;
+const pingTime = dateObj.getTime();
+const nowTime = new Date().getTime();
+const diffTotalMins = Math.floor((nowTime - pingTime) / (1000 * 60));
+// --- DYNAMIC TIME AGO LOGIC ---
+let agoText = "";
+if (diffTotalMins < 1) {
+agoText = "<b>(Just Now)</b>";
+} else if (diffTotalMins < 60) {
+agoText = `<b>(${diffTotalMins} mint ago)</b>`;
+} else if (diffTotalMins < 1440) {
+const displayHours = Math.floor(diffTotalMins / 60);
+const displayMins = diffTotalMins % 60;
+agoText = `<b>(${displayHours} hour ${displayMins} mint ago)</b>`;
+} else {
+const displayDays = Math.floor(diffTotalMins / 1440);
+agoText = `<b>(${displayDays} day ago)</b>`;
+}
 const isLatest = (i === cardsToShow.length - 1);
 const rawSpeed = parseFloat(feed.field3);
 const speed = (!isNaN(rawSpeed)) ? Math.round(rawSpeed) + " km/h" : "0 km/h";
 const card = `
 <div class="feed-card ${isLatest ? 'latest' : ''}">
-<div class="time">🕒 ${formattedTime}</div>
+<div class="time">🕒 ${formattedTime} ${isLatest ? agoText : ''}</div>
 <div class="coord"><span class="label">Latitude:</span> ${feed.field1 || 'N/A'}</div>
 <div class="coord"><span class="label">Longitude:</span> ${feed.field2 || 'N/A'}</div>
 <div class="coord"><span class="label">Speed:</span> ${speed}</div>
