@@ -120,10 +120,12 @@ h2 {
   overflow: hidden;
   border: 1px solid #ccc;
   background-color: #e5e3df;
+  overscroll-behavior: contain; /* stop a map drag from chaining into a page scroll */
 }
 #live-map-frame {
   width: 100%;
   height: 100%;
+  touch-action: none; /* let Leaflet's JS fully own drag/pan; browser won't hijack it as page scroll */
 }
 /* CAR ICON MARKER (top-view car, replaces default Leaflet pin, rotates with heading) */
 .car-icon-marker {
