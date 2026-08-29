@@ -530,10 +530,19 @@ for (let i = 0; i < trackPoints.length; i++) {
 
 // Current trip ka poora trajectory: locked start point se lekar ab tak ke
 // saare points -- isse actual route/path banta hai, seedhi line nahi.
+// GPS-jitter smoothing: naya point tabhi path me jodte hain jab wo pichle
+// jode gaye point se kam se kam MIN_MOVE_KM door ho -- warna bike khadi hone
+// par bhi GPS ka chhota-sa natural jitter ek garbage zigzag/loop bana deta
+// tha jabki vehicle actually hilta hi nahi tha.
+const MIN_MOVE_KM = 0.008; // ~8 meters -- isse kam movement ko GPS noise maante hain
 let tripPoints = fixedTripStartPoint ? [fixedTripStartPoint] : [];
 for (let i = 0; i < trackPoints.length; i++) {
   if (fixedTripStartTime !== null && trackTimes[i] > fixedTripStartTime) {
-    tripPoints.push(trackPoints[i]);
+    const candidate = trackPoints[i];
+    const lastAdded = tripPoints[tripPoints.length - 1];
+    if (!lastAdded || haversineKm(lastAdded[0], lastAdded[1], candidate[0], candidate[1]) >= MIN_MOVE_KM) {
+      tripPoints.push(candidate);
+    }
   }
 }
 if (tripPoints.length === 0) tripPoints = trackPoints; // safety fallback
@@ -610,6 +619,8 @@ if (tripPoints.length > 0) {
  startMarker = L.circleMarker(fixedTripStartPoint || tripPoints[0], { radius: 6, color: '#28a745', fillColor: '#28a745', fillOpacity: 1 })
  .addTo(map).bindPopup("Start");
  // Latest/live marker (top-view car icon, rotated to face direction of travel)
+ // -- same smoothed/filtered point jo line ka end hai use karte hain, isliye
+ // GPS jitter se marker khadi bike par wobble/ghoomta hua nahi dikhega.
  const lastPoint = tripPoints[tripPoints.length - 1];
  if (tripPoints.length >= 2) {
    const prevPoint = tripPoints[tripPoints.length - 2];
