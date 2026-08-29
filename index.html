@@ -301,6 +301,24 @@ let map = null;
 let pathLine = null;
 let startMarker = null;
 let liveMarker = null;
+
+// ---- Trip tracking state (persists across fetches, survives Firebase's
+// sliding 200-record window) ----
+// fixedTripStart* = the LOCKED start point/time of the current trip. Green dot
+// (start marker) is drawn here and never moves just because old records aged
+// out of the Firebase query window -- it only moves when a genuine new trip
+// is detected below.
+let fixedTripStartPoint = null;
+let fixedTripStartTime = null;
+// clusterAnchor* = the position the vehicle is currently "parked near" (within
+// STOP_RADIUS_KM). Used to measure how long it has stayed in one place.
+let clusterAnchorPoint = null;
+let clusterAnchorTime = null;
+// Watermark so each fetch only processes points we haven't already folded
+// into the trip state -- makes this immune to the window shrinking/growing.
+let lastProcessedTime = null;
+const STOP_RADIUS_KM = 0.02;      // ~20m -- GPS jitter tolerance for "same place"
+const STOP_DURATION_MS = 5 * 60 * 1000; // 5 minutes stationary = trip ends
 let hasAutoFitted = false; // ensures we only auto zoom/pan on the very first load
 let lastPathBounds = null; // remembers latest trajectory bounds for the recenter button
 let tileErrorShown = false; // avoid spamming the warning banner on every failed tile
@@ -462,15 +480,63 @@ document.getElementById('vehicle-card').classList.remove('connected');
 document.getElementById('vehicle-card').classList.add('disconnected');
 return;
 }
-// ---- Build the trajectory point list (valid lat/lng only) ----
+// ---- Build the trajectory point list (valid lat/lng only), timestamps saath saath ----
 const trackPoints = [];
+const trackTimes = [];
 data.feeds.forEach(f => {
  const la = parseFloat(f.field1);
  const lo = parseFloat(f.field2);
  if (!isNaN(la) && !isNaN(lo) && !(la === 0 && lo === 0)) {
  trackPoints.push([la, lo]);
+ trackTimes.push(new Date(f.created_at).getTime());
  }
 });
+// ---- Trip detection: sirf naye (abhi tak process na hue) points par chalte
+// hain, isliye purane points Firebase ke 200-record window se bahar nikal
+// jayein to bhi trip-start galti se aage nahi khiskega. Jab bike ek hi jagah
+// (~20m ke andar) 5+ minute tak rukti hai aur fir dobara move karti hai, wahi
+// se naya trip lock ho jata hai -- start marker (green dot) sirf tabhi hilta
+// hai, warna fixed rehta hai.
+for (let i = 0; i < trackPoints.length; i++) {
+  const t = trackTimes[i];
+  if (lastProcessedTime !== null && t <= lastProcessedTime) continue; // already seen
+  const pt = trackPoints[i];
+
+  if (clusterAnchorPoint === null) {
+    // sabse pehla point jo kabhi dekha
+    clusterAnchorPoint = pt;
+    clusterAnchorTime = t;
+    if (fixedTripStartPoint === null) {
+      fixedTripStartPoint = pt;
+      fixedTripStartTime = t;
+    }
+  } else {
+    const distKm = haversineKm(clusterAnchorPoint[0], clusterAnchorPoint[1], pt[0], pt[1]);
+    if (distKm > STOP_RADIUS_KM) {
+      // anchor se door chala gaya -- check karo anchor par kitni der ruka tha
+      const clusterDuration = (lastProcessedTime !== null ? lastProcessedTime : clusterAnchorTime) - clusterAnchorTime;
+      if (clusterDuration >= STOP_DURATION_MS) {
+        // genuine 5+ min stop ke baad movement -- naya trip yahin se lock karo
+        fixedTripStartPoint = pt;
+        fixedTripStartTime = t;
+      }
+      clusterAnchorPoint = pt; // anchor naye position par reset
+      clusterAnchorTime = t;
+    }
+    // radius ke andar hai to kuch nahi karna, cluster/anchor waisa hi rehta hai
+  }
+  lastProcessedTime = t;
+}
+
+// Current trip ka poora trajectory: locked start point se lekar ab tak ke
+// saare points -- isse actual route/path banta hai, seedhi line nahi.
+let tripPoints = fixedTripStartPoint ? [fixedTripStartPoint] : [];
+for (let i = 0; i < trackPoints.length; i++) {
+  if (fixedTripStartTime !== null && trackTimes[i] > fixedTripStartTime) {
+    tripPoints.push(trackPoints[i]);
+  }
+}
+if (tripPoints.length === 0) tripPoints = trackPoints; // safety fallback
 // ---- Top Speed / Total Distance stats ----
 // Top speed: highest reading seen so far this session (never decreases, even
 // once older high-speed points drop out of the 200-entry Firebase window).
@@ -533,18 +599,20 @@ container.innerHTML += card;
 }
 // ---- Draw trajectory on Leaflet map ----
 initMapIfNeeded();
-if (trackPoints.length > 0) {
- // Path line
+if (tripPoints.length > 0) {
+ // Path line: current trip ke locked start se ab tak vehicle jin-jin points se
+ // hokar gaya, un sabko jodkar actual trajectory banti hai (seedhi line nahi).
  if (pathLine) { map.removeLayer(pathLine); }
- pathLine = L.polyline(trackPoints, { color: '#007bff', weight: 4, opacity: 0.8 }).addTo(map);
- // Start marker
+ pathLine = L.polyline(tripPoints, { color: '#007bff', weight: 4, opacity: 0.8 }).addTo(map);
+ // Start marker (green dot) -- locked trip-start point par fixed, sirf tab
+ // hilta hai jab bike genuinely 5+ min ruk kar dobara move kare.
  if (startMarker) { map.removeLayer(startMarker); }
- startMarker = L.circleMarker(trackPoints[0], { radius: 6, color: '#28a745', fillColor: '#28a745', fillOpacity: 1 })
+ startMarker = L.circleMarker(fixedTripStartPoint || tripPoints[0], { radius: 6, color: '#28a745', fillColor: '#28a745', fillOpacity: 1 })
  .addTo(map).bindPopup("Start");
  // Latest/live marker (top-view car icon, rotated to face direction of travel)
- const lastPoint = trackPoints[trackPoints.length - 1];
- if (trackPoints.length >= 2) {
-   const prevPoint = trackPoints[trackPoints.length - 2];
+ const lastPoint = tripPoints[tripPoints.length - 1];
+ if (tripPoints.length >= 2) {
+   const prevPoint = tripPoints[tripPoints.length - 2];
    // only update heading if the car actually moved (avoids jitter when stationary)
    if (prevPoint[0] !== lastPoint[0] || prevPoint[1] !== lastPoint[1]) {
      lastHeading = computeBearing(prevPoint[0], prevPoint[1], lastPoint[0], lastPoint[1]);
