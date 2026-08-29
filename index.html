@@ -360,7 +360,41 @@ h2 {
 const FIREBASE_HOST = "city-gps-tracker-default-rtdb.asia-southeast1.firebasedatabase.app";
 const FIREBASE_PATH = "/gps_history.json";
 const url = `https://${FIREBASE_HOST}${FIREBASE_PATH}?orderBy=%22$key%22&limitToLast=200`;
+// Separate node used to persist completed trips (so trip history survives a
+// page reload / is visible in the Firebase console / syncs across devices).
+const TRIPS_PATH = "/trip_history.json";
+const tripsUrl = `https://${FIREBASE_HOST}${TRIPS_PATH}`;
 // ---------------------------------------------------------------------------
+
+// Saves one finished trip to Firebase under /trips (POST = Firebase generates
+// a new chronologically-sortable push key automatically, just like the GPS
+// fixes themselves).
+function saveTripToFirebase(trip) {
+  fetch(tripsUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(trip)
+  }).catch(function(err) {
+    console.error('Failed to save trip to Firebase:', err);
+  });
+}
+
+// Loads any previously-saved trips from Firebase once at startup, so trip
+// history isn't lost on a page reload or when opening the tracker on another
+// device/browser.
+function loadTripsFromFirebase() {
+  fetch(tripsUrl)
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (!data) return;
+      const loaded = Object.keys(data).sort().map(function(k) { return data[k]; });
+      allTrips = loaded.concat(allTrips);
+      if (document.getElementById('trip-panel').style.display === 'block') renderTripMenu();
+    })
+    .catch(function(err) {
+      console.error('Failed to load trip history from Firebase:', err);
+    });
+}
 
 // Leaflet map init (ek hi baar)
 const MAPTILER_KEY = "uqDjOTcIKm28iF924vhH"; // same key used for every style below
@@ -777,11 +811,13 @@ for (let i = 0; i < trackPoints.length; i++) {
         // genuine 5+ min stop ke baad movement -- purani trip ko history me
         // save karo (agar usme kam se kam 2 points hain), fir naya trip lock karo
         if (currentTripPoints.length > 1) {
-          allTrips.push({
+          const finishedTrip = {
             startTime: fixedTripStartTime,
             endTime: lastProcessedTime,
             points: currentTripPoints.slice()
-          });
+          };
+          allTrips.push(finishedTrip);
+          saveTripToFirebase(finishedTrip); // persist so it shows up in the Firebase console too
         }
         fixedTripStartPoint = pt;
         fixedTripStartTime = t;
@@ -949,7 +985,8 @@ vehicleCard.classList.remove('connected');
 vehicleCard.classList.add('disconnected');
 });
 }
-// Startup render call
+// Startup: load any past trips already saved in Firebase, then start the live feed
+loadTripsFromFirebase();
 fetchAndRenderData();
 // 15 seconds real-time auto-refresh loop
 setInterval(fetchAndRenderData, 2000);
