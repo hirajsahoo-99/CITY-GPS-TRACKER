@@ -110,6 +110,38 @@ h2 {
   color: #007bff;
   font-weight: normal;
 }
+/* HISTORY VIEW STATUS BAR (shown above the map when viewing a past trip
+   instead of the live feed) */
+#trip-status-bar {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  background: #eaf3ff;
+  border: 1px solid #b8d9ff;
+  color: #1c5faa;
+  font-size: 12px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  margin-top: 10px;
+  gap: 8px;
+}
+#trip-status-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#go-live-btn {
+  flex: 0 0 auto;
+  border: none;
+  background: #007bff;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+#go-live-btn:hover { background: #0062cc; }
 /* LIVE MAP CONTAINER LAYOUT */
 .map-box {
   width: 100%;
@@ -188,6 +220,61 @@ h2 {
   stroke: #ffffff;
 }
 
+/* MENU BAR (sits right below the page title, above the stats bar) */
+#menu-bar {
+  position: relative;
+  margin-bottom: 12px;
+}
+#menu-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  cursor: pointer;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #2c3e50;
+}
+#menu-btn:hover { background: #f0f0f0; }
+#menu-btn svg { width: 16px; height: 16px; flex: 0 0 auto; }
+
+/* TRIP HISTORY DROPDOWN PANEL (appears directly under the hamburger button) */
+#trip-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 1001;
+  display: none;
+  width: 260px;
+  max-height: 280px;
+  overflow-y: auto;
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+  border: 1px solid #ddd;
+}
+.trip-item {
+  padding: 9px 12px;
+  font-size: 12px;
+  color: #2c3e50;
+  border-bottom: 1px solid #eee;
+  cursor: pointer;
+  line-height: 1.4;
+}
+.trip-item:last-child { border-bottom: none; }
+.trip-item:hover { background: #f4f7f6; }
+.trip-item.active { background: #e7f3ff; font-weight: 600; color: #007bff; }
+.trip-item-empty {
+  padding: 12px;
+  font-size: 12px;
+  color: #999;
+  text-align: center;
+}
+
 /* TILE LOAD WARNING BANNER (shown over map if MapTiler tiles fail, e.g. domain-restricted key) */
 #tile-warning {
   position: absolute;
@@ -206,6 +293,15 @@ h2 {
 </head>
 <body>
 <h2>City GPS Tracker</h2>
+<div id="menu-bar">
+  <button id="menu-btn" title="Trip History">
+    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M3 6h18M3 12h18M3 18h18" stroke="#333" stroke-width="1.8" stroke-linecap="round"/>
+    </svg>
+    <span>Trip History</span>
+  </button>
+  <div id="trip-panel"></div>
+</div>
 <div class="stats-bar">
   <div class="stat-card" id="status-card">
     <div class="stat-label">Status</div>
@@ -226,6 +322,11 @@ h2 {
 </div>
 <!-- 1. Latitude/Longitude Display Area -->
 <div id="feeds-container" class="feeds-grid">Loading coordinates...</div>
+<!-- History view status bar: shown only while viewing a past trip instead of the live feed -->
+<div id="trip-status-bar">
+  <span id="trip-status-text"></span>
+  <button id="go-live-btn">Go Live</button>
+</div>
 <!-- 2. Leaflet Map (shows trajectory path) -->
 <div class="map-box">
 <div id="live-map-frame"></div>
@@ -310,6 +411,16 @@ let liveMarker = null;
 // is detected below.
 let fixedTripStartPoint = null;
 let fixedTripStartTime = null;
+// currentTripPoints = the smoothed route of the trip currently in progress,
+// built up incrementally (point-by-point, exactly once per point) below --
+// unlike the raw Firebase window, this never loses points as the window slides.
+let currentTripPoints = [];
+// allTrips = every trip that has been finalized (vehicle stopped 5+ minutes),
+// each one a frozen {startTime, endTime, points} record for the history menu.
+let allTrips = [];
+// viewingTripKey = 'live' (map follows the current trip) or an index into
+// allTrips (map shows a frozen snapshot of that past trip instead).
+let viewingTripKey = 'live';
 // clusterAnchor* = the position the vehicle is currently "parked near" (within
 // STOP_RADIUS_KM). Used to measure how long it has stayed in one place.
 let clusterAnchorPoint = null;
@@ -319,14 +430,56 @@ let clusterAnchorTime = null;
 let lastProcessedTime = null;
 const STOP_RADIUS_KM = 0.02;      // ~20m -- GPS jitter tolerance for "same place"
 const STOP_DURATION_MS = 5 * 60 * 1000; // 5 minutes stationary = trip ends
+// Path-jitter filter: while parked, cheap GPS modules can report fixes
+// 10-20m away from the true position on any single reading. A plain
+// "far enough from the last point" check still lets ONE noisy fix through,
+// which is what was drawing the zigzag/star pattern while stationary.
+// Fix: only accept a point as real movement once PATH_MOVE_CONFIRM_COUNT
+// consecutive fixes stay away from the anchor -- a genuine drive keeps
+// moving away each time, a jitter spike snaps back close on the very next fix.
+const PATH_STATIONARY_RADIUS_KM = 0.02; // ~20m -- fixes inside this radius of the last plotted point are treated as "still parked"
+const PATH_MOVE_CONFIRM_COUNT = 2; // consecutive outside-radius fixes needed before a move is accepted
+let pendingMoveCount = 0;
+let pendingMovePoint = null;
+
+// Decides whether a new raw GPS fix should be appended to the current trip's
+// plotted path, applying the anchor+debounce jitter filter above.
+function maybeAddPathPoint(pt) {
+  if (currentTripPoints.length === 0) {
+    currentTripPoints.push(pt);
+    pendingMoveCount = 0;
+    pendingMovePoint = null;
+    return;
+  }
+  const anchor = currentTripPoints[currentTripPoints.length - 1];
+  const dist = haversineKm(anchor[0], anchor[1], pt[0], pt[1]);
+  if (dist < PATH_STATIONARY_RADIUS_KM) {
+    // Still basically parked -- ignore so the jitter never touches the line.
+    pendingMoveCount = 0;
+    pendingMovePoint = null;
+    return;
+  }
+  pendingMoveCount++;
+  pendingMovePoint = pt;
+  if (pendingMoveCount >= PATH_MOVE_CONFIRM_COUNT) {
+    currentTripPoints.push(pendingMovePoint);
+    pendingMoveCount = 0;
+    pendingMovePoint = null;
+  }
+}
 let hasAutoFitted = false; // ensures we only auto zoom/pan on the very first load
 let lastPathBounds = null; // remembers latest trajectory bounds for the recenter button
 let tileErrorShown = false; // avoid spamming the warning banner on every failed tile
 let followMode = true; // true = map keeps auto-panning to follow the car every update
 let lastKnownPoint = null; // most recent car position, used when recenter button re-enables follow
 
-// Re-center button: jab click ho, follow mode wapas ON kar do aur turant latest point par snap karo
+// Re-center button: agar history dekh rahe hain to pehle live view par wapas
+// jao; warna follow mode ON karke turant latest point par snap karo.
 document.getElementById('recenter-btn').addEventListener('click', function() {
+  if (viewingTripKey !== 'live') {
+    selectTrip('live');
+    return;
+  }
   followMode = true;
   if (map && lastKnownPoint) {
     map.panTo(lastKnownPoint, { animate: true });
@@ -341,6 +494,107 @@ document.getElementById('style-toggle-btn').addEventListener('click', function()
   switchMapStyle(nextStyleId);
   this.classList.toggle('hybrid-active', nextStyleId === 'hybrid');
 });
+
+// ---- Hamburger menu: trip-history dropdown ----
+document.getElementById('menu-btn').addEventListener('click', function(e) {
+  e.stopPropagation();
+  const panel = document.getElementById('trip-panel');
+  const willShow = panel.style.display !== 'block';
+  if (willShow) renderTripMenu();
+  panel.style.display = willShow ? 'block' : 'none';
+});
+// Tap anywhere outside the open panel to close it.
+document.addEventListener('click', function(e) {
+  const panel = document.getElementById('trip-panel');
+  if (panel.style.display === 'block' && !panel.contains(e.target) && e.target.id !== 'menu-btn') {
+    panel.style.display = 'none';
+  }
+});
+document.getElementById('go-live-btn').addEventListener('click', function() {
+  selectTrip('live');
+});
+
+function formatClock(d) {
+  let h = d.getHours();
+  const m = d.getMinutes().toString().padStart(2, '0');
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12; h = h ? h : 12;
+  return `${h}:${m} ${ampm}`;
+}
+
+function tripDistanceKm(trip) {
+  let d = 0;
+  for (let i = 1; i < trip.points.length; i++) {
+    d += haversineKm(trip.points[i - 1][0], trip.points[i - 1][1], trip.points[i][0], trip.points[i][1]);
+  }
+  return d;
+}
+
+function formatTripLabel(trip) {
+  const start = new Date(trip.startTime);
+  const end = new Date(trip.endTime);
+  return `${start.toLocaleDateString()} · ${formatClock(start)} – ${formatClock(end)} · ${tripDistanceKm(trip).toFixed(1)} km`;
+}
+
+// Builds/refreshes the dropdown list: "Live Tracking" first, then every
+// completed trip (most recent first), highlighting whichever is active.
+function renderTripMenu() {
+  const panel = document.getElementById('trip-panel');
+  let html = `<div class="trip-item ${viewingTripKey === 'live' ? 'active' : ''}" data-trip="live">🔴 Live Tracking</div>`;
+  for (let i = allTrips.length - 1; i >= 0; i--) {
+    html += `<div class="trip-item ${viewingTripKey === i ? 'active' : ''}" data-trip="${i}">Trip ${i + 1} — ${formatTripLabel(allTrips[i])}</div>`;
+  }
+  if (allTrips.length === 0) {
+    html += `<div class="trip-item-empty">No past trips detected yet</div>`;
+  }
+  panel.innerHTML = html;
+  panel.querySelectorAll('.trip-item').forEach(function(el) {
+    el.addEventListener('click', function() {
+      const key = this.getAttribute('data-trip');
+      selectTrip(key === 'live' ? 'live' : parseInt(key, 10));
+      document.getElementById('trip-panel').style.display = 'none';
+    });
+  });
+}
+
+// Switches what the map shows: either the live trip (auto-updating, follows
+// the car every refresh) or a frozen snapshot of one past trip's full route.
+function selectTrip(key) {
+  viewingTripKey = key;
+  const statusBar = document.getElementById('trip-status-bar');
+  if (key === 'live') {
+    followMode = true;
+    statusBar.style.display = 'none';
+    // Snap straight back to the car; the next auto-refresh redraws the live
+    // path/markers since viewingTripKey is back to 'live'.
+    if (map && lastKnownPoint) {
+      map.panTo(lastKnownPoint, { animate: true });
+    } else if (map && lastPathBounds) {
+      map.fitBounds(lastPathBounds, { padding: [30, 30] });
+    }
+  } else {
+    followMode = false;
+    const trip = allTrips[key];
+    document.getElementById('trip-status-text').textContent = `Viewing Trip ${key + 1} — ${formatTripLabel(trip)}`;
+    statusBar.style.display = 'flex';
+    drawStaticTrip(trip);
+  }
+}
+
+// Draws one completed trip's full route as a frozen line with a green start
+// dot and a red end dot, and zooms the map to fit the whole route.
+function drawStaticTrip(trip) {
+  initMapIfNeeded();
+  if (pathLine) map.removeLayer(pathLine);
+  if (startMarker) map.removeLayer(startMarker);
+  if (liveMarker) map.removeLayer(liveMarker);
+  pathLine = L.polyline(trip.points, { color: '#6c757d', weight: 4, opacity: 0.85 }).addTo(map);
+  startMarker = L.circleMarker(trip.points[0], { radius: 6, color: '#28a745', fillColor: '#28a745', fillOpacity: 1 })
+    .addTo(map).bindPopup('Start');
+  liveMarker = L.circleMarker(trip.points[trip.points.length - 1], { radius: 6, color: '#dc3545', fillColor: '#dc3545', fillOpacity: 1 })
+    .addTo(map).bindPopup('End');
+  map.fitBounds(pathLine.getBounds(), { padding: [30, 30] });
+}
 
 // Top-view car SVG. Default artwork points "up" (north = 0deg heading).
 const CAR_SVG = `
@@ -495,20 +749,24 @@ data.feeds.forEach(f => {
 // hain, isliye purane points Firebase ke 200-record window se bahar nikal
 // jayein to bhi trip-start galti se aage nahi khiskega. Jab bike ek hi jagah
 // (~20m ke andar) 5+ minute tak rukti hai aur fir dobara move karti hai, wahi
-// se naya trip lock ho jata hai -- start marker (green dot) sirf tabhi hilta
-// hai, warna fixed rehta hai.
+// se naya trip lock ho jata hai -- purani trip currentTripPoints se allTrips
+// me freeze ho jati hai (history menu ke liye), aur start marker (green dot)
+// sirf tabhi hilta hai, warna fixed rehta hai.
 for (let i = 0; i < trackPoints.length; i++) {
   const t = trackTimes[i];
   if (lastProcessedTime !== null && t <= lastProcessedTime) continue; // already seen
   const pt = trackPoints[i];
 
   if (clusterAnchorPoint === null) {
-    // sabse pehla point jo kabhi dekha
+    // sabse pehla point jo kabhi dekha -- yahi se trip #1 shuru
     clusterAnchorPoint = pt;
     clusterAnchorTime = t;
     if (fixedTripStartPoint === null) {
       fixedTripStartPoint = pt;
       fixedTripStartTime = t;
+      currentTripPoints = [pt];
+      pendingMoveCount = 0;
+      pendingMovePoint = null;
     }
   } else {
     const distKm = haversineKm(clusterAnchorPoint[0], clusterAnchorPoint[1], pt[0], pt[1]);
@@ -516,36 +774,41 @@ for (let i = 0; i < trackPoints.length; i++) {
       // anchor se door chala gaya -- check karo anchor par kitni der ruka tha
       const clusterDuration = (lastProcessedTime !== null ? lastProcessedTime : clusterAnchorTime) - clusterAnchorTime;
       if (clusterDuration >= STOP_DURATION_MS) {
-        // genuine 5+ min stop ke baad movement -- naya trip yahin se lock karo
+        // genuine 5+ min stop ke baad movement -- purani trip ko history me
+        // save karo (agar usme kam se kam 2 points hain), fir naya trip lock karo
+        if (currentTripPoints.length > 1) {
+          allTrips.push({
+            startTime: fixedTripStartTime,
+            endTime: lastProcessedTime,
+            points: currentTripPoints.slice()
+          });
+        }
         fixedTripStartPoint = pt;
         fixedTripStartTime = t;
+        currentTripPoints = [pt];
+        pendingMoveCount = 0;
+        pendingMovePoint = null;
+      } else {
+        // 5 min se kam hi ruka tha -- same trip continue, bas anchor+debounce
+        // jitter filter ke saath point jodo (upar maybeAddPathPoint dekho)
+        maybeAddPathPoint(pt);
       }
       clusterAnchorPoint = pt; // anchor naye position par reset
       clusterAnchorTime = t;
+    } else {
+      // radius ke andar hai (khadi/ruki hui) -- yahan bhi wahi anchor+debounce
+      // filter chalta hai, isliye single noisy fix path ko zigzag nahi karega
+      maybeAddPathPoint(pt);
     }
-    // radius ke andar hai to kuch nahi karna, cluster/anchor waisa hi rehta hai
   }
   lastProcessedTime = t;
 }
 
-// Current trip ka poora trajectory: locked start point se lekar ab tak ke
-// saare points -- isse actual route/path banta hai, seedhi line nahi.
-// GPS-jitter smoothing: naya point tabhi path me jodte hain jab wo pichle
-// jode gaye point se kam se kam MIN_MOVE_KM door ho -- warna bike khadi hone
-// par bhi GPS ka chhota-sa natural jitter ek garbage zigzag/loop bana deta
-// tha jabki vehicle actually hilta hi nahi tha.
-const MIN_MOVE_KM = 0.008; // ~8 meters -- isse kam movement ko GPS noise maante hain
-let tripPoints = fixedTripStartPoint ? [fixedTripStartPoint] : [];
-for (let i = 0; i < trackPoints.length; i++) {
-  if (fixedTripStartTime !== null && trackTimes[i] > fixedTripStartTime) {
-    const candidate = trackPoints[i];
-    const lastAdded = tripPoints[tripPoints.length - 1];
-    if (!lastAdded || haversineKm(lastAdded[0], lastAdded[1], candidate[0], candidate[1]) >= MIN_MOVE_KM) {
-      tripPoints.push(candidate);
-    }
-  }
-}
-if (tripPoints.length === 0) tripPoints = trackPoints; // safety fallback
+// Live trip ka trajectory ab currentTripPoints me hi incrementally maintained
+// hai (upar wale loop me), isliye Firebase ke sliding 200-record window se
+// bilkul independent hai -- purane points window se nikal bhi jayein to route
+// nahi tootega.
+let tripPoints = currentTripPoints.length > 0 ? currentTripPoints : trackPoints; // safety fallback
 // ---- Top Speed / Total Distance stats ----
 // Top speed: highest reading seen so far this session (never decreases, even
 // once older high-speed points drop out of the 200-entry Firebase window).
@@ -606,9 +869,11 @@ const card = `
 </div>`;
 container.innerHTML += card;
 }
-// ---- Draw trajectory on Leaflet map ----
+// ---- Draw trajectory on Leaflet map (sirf jab live view active ho -- agar
+// user history menu se koi purani trip dekh raha hai to yahan map ko chhedte
+// nahi, wo static hi rehta hai jab tak "Go Live" na dabaye) ----
 initMapIfNeeded();
-if (tripPoints.length > 0) {
+if (viewingTripKey === 'live' && tripPoints.length > 0) {
  // Path line: current trip ke locked start se ab tak vehicle jin-jin points se
  // hokar gaya, un sabko jodkar actual trajectory banti hai (seedhi line nahi).
  if (pathLine) { map.removeLayer(pathLine); }
@@ -665,6 +930,11 @@ if (!tileErrorShown) {
   setStatValue(document.getElementById('status'), "Live");
   statusCard.classList.remove('error');
   statusCard.classList.add('live');
+}
+// Trip-history dropdown ko sync me rakho agar wo abhi open hai (e.g. upar
+// koi trip finalize hui ho aur list me naya entry aaya ho).
+if (document.getElementById('trip-panel').style.display === 'block') {
+  renderTripMenu();
 }
 })
 .catch(error => {
