@@ -68,10 +68,6 @@ h2 {
   100% { opacity: 1; }
 }
 /* State colors -- toggled on the card itself, never on innerHTML, so no rebuild */
-#status-card.live { border-left-color: #28a745; }
-#status-card.live .stat-value { color: #28a745; }
-#status-card.error { border-left-color: #dc3545; }
-#status-card.error .stat-value { color: #dc3545; }
 #vehicle-card.connected { border-left-color: #28a745; }
 #vehicle-card.connected .stat-value { color: #28a745; }
 #vehicle-card.disconnected { border-left-color: #dc3545; }
@@ -220,12 +216,10 @@ h2 {
   stroke: #ffffff;
 }
 
-/* MENU BAR (sits right below the page title, above the stats bar) --
-   holds the compact Trip button on the left and the network flow diagram
-   filling the remaining space on the right, always in one row. */
+/* MENU BAR (top-left: hamburger Trip button, then the page title, in one row). */
 #menu-bar {
   position: relative;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -250,6 +244,15 @@ h2 {
 }
 #menu-btn:hover { background: #f0f0f0; }
 #menu-btn svg { width: 16px; height: 16px; flex: 0 0 auto; }
+
+/* Page title, sitting immediately to the right of the Trip button */
+#page-title {
+  margin: 0;
+  font-size: 20px;
+  color: #333;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
 
 /* TRIP HISTORY DROPDOWN PANEL (appears directly under the hamburger button) */
 #trip-panel {
@@ -284,21 +287,12 @@ h2 {
   text-align: center;
 }
 
-/* PAGE HEADER ROW: just the page title now -- the network diagram lives in
-   #menu-bar, to the right of the compact Trip button. */
-#page-header {
-  margin-bottom: 15px;
-}
-#page-header h2 {
-  margin: 0;
-}
-
 /* NETWORK FLOW DIAGRAM (Module -> Internet -> Server -> Internet -> Mobile).
-   Sits inside #menu-bar, to the right of the Trip button -- small, permanent,
-   self-contained strip that illustrates how a live GPS fix reaches the phone. */
+   Now placed BELOW the Trip/title bar as its own full-width row -- small,
+   permanent, self-contained strip that illustrates how a live GPS fix
+   reaches the phone. */
 #network-diagram {
-  flex: 1 1 auto;
-  min-width: 0;
+  width: 100%;
   max-width: 420px;
   box-sizing: border-box;
   background: #ffffff;
@@ -307,6 +301,8 @@ h2 {
   box-shadow: 0 1px 3px rgba(0,0,0,0.08);
   padding: 4px 8px;
   overflow-x: auto;
+  margin-top: 4px;
+  margin-bottom: 15px;
 }
 @media (max-width: 600px) {
   #network-diagram { max-width: none; }
@@ -405,9 +401,6 @@ h2 {
 </style>
 </head>
 <body>
-<div id="page-header">
-<h2>City GPS Tracker</h2>
-</div>
 <div id="menu-bar">
   <button id="menu-btn" title="Trip History">
     <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -415,11 +408,14 @@ h2 {
     </svg>
     <span>TRIP</span>
   </button>
-  <!-- Network flow diagram: [GPS/Module] -> Internet -> Server -> Internet -> Mobile.
-       The first node is split in half: top = GPS fix status (label "GPS"), bottom =
-       Module's own network/internet status (netOk, power-button icon). Sits to the
-       right of the Trip button, filling the remaining row space. -->
-  <div id="network-diagram" title="How a GPS fix reaches your phone">
+  <h2 id="page-title">City GPS Tracker</h2>
+  <div id="trip-panel"></div>
+</div>
+<!-- Network flow diagram: [GPS/Module] -> Internet -> Server -> Internet -> Mobile.
+     Moved below the Trip/title bar as its own full-width row. The first node is
+     split in half: top = GPS fix status (label "GPS"), bottom = Module's own
+     network/internet status (netOk, power-button icon). -->
+<div id="network-diagram" title="How a GPS fix reaches your phone">
 
     <svg viewBox="0 0 422 46" xmlns="http://www.w3.org/2000/svg">
       <defs>
@@ -523,13 +519,7 @@ h2 {
       </g>
     </svg>
 </div>
-  <div id="trip-panel"></div>
-</div>
 <div class="stats-bar">
-  <div class="stat-card" id="status-card">
-    <div class="stat-label">Status</div>
-    <div class="stat-value" id="status">Live Tracking</div>
-  </div>
   <div class="stat-card" id="vehicle-card">
     <div class="stat-label">Vehicle</div>
     <div class="stat-value" id="vehicle-status">Checking...</div>
@@ -959,10 +949,6 @@ function getOrCreateTileLayer(styleId) {
     if (!tileErrorShown) {
       tileErrorShown = true;
       document.getElementById('tile-warning').style.display = 'block';
-      const statusCard = document.getElementById('status-card');
-      setStatValue(document.getElementById('status'), "Map Error");
-      statusCard.classList.remove('live');
-      statusCard.classList.add('error');
     }
   });
   layer.on('tileload', function() {
@@ -1183,22 +1169,12 @@ if (diffMinutes <= 3) {
   // Fetch itself still succeeded -- only Internet<->Server<->Internet is confirmed here.
   updateDiagramFromStatus({ firebaseReachable: true });
 }
-if (!tileErrorShown) {
-  const statusCard = document.getElementById('status-card');
-  setStatValue(document.getElementById('status'), "Live");
-  statusCard.classList.remove('error');
-  statusCard.classList.add('live');
-}
 if (document.getElementById('trip-panel').style.display === 'block') {
   renderTripMenu();
 }
 })
 .catch(error => {
 console.error("App layer execution exception:", error);
-const statusCard = document.getElementById('status-card');
-setStatValue(document.getElementById('status'), "Offline");
-statusCard.classList.remove('live');
-statusCard.classList.add('error');
 const vehicleCard = document.getElementById('vehicle-card');
 setStatValue(document.getElementById('vehicle-status'), "Disconnected");
 vehicleCard.classList.remove('connected');
