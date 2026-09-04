@@ -544,6 +544,13 @@ const tripsUrl = `https://${FIREBASE_HOST}${TRIPS_PATH}`;
 // the dashboard doesn't have to guess connectivity purely from GPS-fix freshness.
 const DEVICE_STATUS_PATH = "/device_status.json";
 const deviceStatusUrl = `https://${FIREBASE_HOST}${DEVICE_STATUS_PATH}?orderBy=%22$key%22&limitToLast=1`;
+// If the module goes offline (powered off, cellular lost, etc.) it simply stops pushing
+// heartbeats -- the LAST heartbeat that made it to Firebase before that just sits there
+// forever with netOk:true. A plain fetch of "the latest entry" can't tell the difference
+// between "still alive" and "died a while ago", so we treat any heartbeat older than this
+// many ms as stale/down. Firmware pushes every ~5s, so 3x that gives margin for one or two
+// missed beats without false-flagging.
+const HEARTBEAT_STALE_MS = 15000;
 
 function saveTripToFirebase(trip) {
   fetch(tripsUrl, {
@@ -574,6 +581,13 @@ function loadTripsFromFirebase() {
 // hasFix drives the Module node's top half. This is what lets the map diagram show
 // "internet stable, GPS still searching" instead of looking dead while waiting for
 // a first fix -- and flip the top half green the instant a fix lands.
+//
+// IMPORTANT: a successful fetch only proves Firebase returned *some* stored heartbeat --
+// it says nothing about whether the module is still the one producing it. If the module
+// is disconnected it stops pushing entirely, so the "latest" entry is just whatever was
+// last written before it went dark. We compare that entry's server timestamp against now
+// and treat anything older than HEARTBEAT_STALE_MS as down, regardless of what netOk/hasFix
+// say inside it.
 function fetchDeviceStatus() {
   fetch(deviceStatusUrl)
     .then(function(res) { return res.json(); })
@@ -587,8 +601,15 @@ function fetchDeviceStatus() {
       }
       const keys = Object.keys(data);
       const latest = data[keys[keys.length - 1]];
-      updateDiagramFromStatus({ moduleInternetOk: !!latest.netOk });
-      updateModuleNode({ netOk: !!latest.netOk, hasFix: !!latest.hasFix });
+
+      const ageMs = Date.now() - (latest.ts || 0);
+      const isStale = !latest.ts || ageMs > HEARTBEAT_STALE_MS;
+
+      const netOk = isStale ? false : !!latest.netOk;
+      const hasFix = isStale ? false : !!latest.hasFix;
+
+      updateDiagramFromStatus({ moduleInternetOk: netOk });
+      updateModuleNode({ netOk: netOk, hasFix: hasFix });
     })
     .catch(function(err) {
       console.error('Failed to fetch device status:', err);
