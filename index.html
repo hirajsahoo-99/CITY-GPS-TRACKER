@@ -548,9 +548,18 @@ const deviceStatusUrl = `https://${FIREBASE_HOST}${DEVICE_STATUS_PATH}?orderBy=%
 // heartbeats -- the LAST heartbeat that made it to Firebase before that just sits there
 // forever with netOk:true. A plain fetch of "the latest entry" can't tell the difference
 // between "still alive" and "died a while ago", so we treat any heartbeat older than this
-// many ms as stale/down. Firmware pushes every ~5s, so 3x that gives margin for one or two
-// missed beats without false-flagging.
-const HEARTBEAT_STALE_MS = 15000;
+// many ms as stale/down.
+//
+// NOTE ON THE VALUE: the firmware's 5s status-push timer only decides WHEN a push is
+// attempted, not how long it takes. Each push (and, when a GPS fix also landed in the
+// same loop() cycle, the GPS-fix push right before it) is a full HTTPS POST over AT
+// commands with timeouts that can individually run into several seconds on a slow or
+// marginal cellular link. So two genuine, back-to-back "device is fine" heartbeats can
+// legitimately be 15-20s+ apart -- a 15s threshold flags a perfectly healthy device as
+// down the moment one push runs a little slow, then flips back the instant the next one
+// lands, producing a red/green flicker. 45s gives real headroom for that latency while
+// still catching an actually-disconnected module within well under a minute.
+const HEARTBEAT_STALE_MS = 45000;
 
 function saveTripToFirebase(trip) {
   fetch(tripsUrl, {
