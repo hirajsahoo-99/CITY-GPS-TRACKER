@@ -224,6 +224,11 @@ h2 {
 #menu-bar {
   position: relative;
   margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 #menu-btn {
   display: inline-flex;
@@ -275,6 +280,89 @@ h2 {
   text-align: center;
 }
 
+/* PAGE HEADER ROW: title on the left, network flow diagram on the right */
+#page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  margin-bottom: 15px;
+}
+#page-header h2 {
+  margin: 0;
+  flex: 0 0 auto;
+}
+
+/* NETWORK FLOW DIAGRAM (Module -> Internet -> Server -> Internet -> Mobile).
+   Sits next to the page title on the right -- small, permanent,
+   self-contained strip that illustrates how a live GPS fix reaches the phone. */
+#network-diagram {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 420px;
+  box-sizing: border-box;
+  background: #ffffff;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  padding: 4px 8px;
+  overflow-x: auto;
+}
+@media (max-width: 600px) {
+  #page-header { flex-direction: column; align-items: stretch; }
+  #network-diagram { max-width: none; }
+}
+/* Each connection group defaults to a glowing green line (up). JS adds
+   .seg-offline the moment that hop is known to be down -- the line turns
+   plain grey and a red X badge appears on top of it. */
+#network-diagram g[id^="seg-"] {
+  color: #28a745;
+  transition: color 0.3s ease;
+}
+#network-diagram g[id^="seg-"] line {
+  filter: drop-shadow(0 0 2.5px currentColor) drop-shadow(0 0 2.5px currentColor);
+  transition: filter 0.3s ease;
+  animation: segGlowPulse 1.8s ease-in-out infinite;
+}
+@keyframes segGlowPulse {
+  0%, 100% { filter: drop-shadow(0 0 1.5px currentColor) drop-shadow(0 0 1.5px currentColor); }
+  50% { filter: drop-shadow(0 0 3.5px currentColor) drop-shadow(0 0 3.5px currentColor); }
+}
+#network-diagram g[id^="seg-"].seg-offline {
+  color: #adb5bd;
+}
+#network-diagram g[id^="seg-"].seg-offline line {
+  filter: none;
+  animation: none;
+}
+#network-diagram g[id^="seg-"] .seg-x {
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+#network-diagram g[id^="seg-"].seg-offline .seg-x {
+  opacity: 1;
+}
+/* Module node is split in half: top = GPS fix status, bottom = Module/network
+   status (netOk). Same green-default / red-on-.half-offline pattern. */
+#network-diagram #module-gps-half,
+#network-diagram #module-net-half {
+  color: #28a745;
+  transition: color 0.3s ease;
+}
+#network-diagram #module-gps-half.half-offline,
+#network-diagram #module-net-half.half-offline {
+  color: #dc3545;
+}
+#network-diagram svg {
+  display: block;
+  width: 100%;
+  height: 46px;
+}
+
+@media (max-width: 480px) {
+  #menu-bar { flex-direction: column; align-items: stretch; }
+}
+
 /* TILE LOAD WARNING BANNER (shown over map if MapTiler tiles fail, e.g. domain-restricted key) */
 #tile-warning {
   position: absolute;
@@ -292,7 +380,102 @@ h2 {
 </style>
 </head>
 <body>
+<div id="page-header">
 <h2>City GPS Tracker</h2>
+<!-- Network flow diagram: [GPS/Module] -> Internet -> Server -> Internet -> Mobile.
+     The first node is split in half: top = GPS fix status, bottom = Module's
+     own network/internet status (netOk). Sits to the right of the page title. -->
+<div id="network-diagram" title="How a GPS fix reaches your phone">
+    <svg viewBox="0 0 460 46" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <clipPath id="moduleClip"><rect x="2" y="8" width="36" height="30" rx="6"/></clipPath>
+      </defs>
+      <!-- Each connection is its own group (a line, plus a red X badge shown
+           only when offline) so it can reflect that hop's status independently. -->
+      <g id="seg-module-internet">
+        <line x1="34" y1="23" x2="104" y2="23" stroke="currentColor" stroke-width="1.6"/>
+        <g class="seg-x">
+          <circle cx="69" cy="23" r="6" fill="#ffffff"/>
+          <line x1="65.8" y1="19.8" x2="72.2" y2="26.2" stroke="#dc3545" stroke-width="1.8" stroke-linecap="round"/>
+          <line x1="65.8" y1="26.2" x2="72.2" y2="19.8" stroke="#dc3545" stroke-width="1.8" stroke-linecap="round"/>
+        </g>
+      </g>
+      <g id="seg-internet-server">
+        <line x1="134" y1="23" x2="204" y2="23" stroke="currentColor" stroke-width="1.6"/>
+        <g class="seg-x">
+          <circle cx="169" cy="23" r="6" fill="#ffffff"/>
+          <line x1="165.8" y1="19.8" x2="172.2" y2="26.2" stroke="#dc3545" stroke-width="1.8" stroke-linecap="round"/>
+          <line x1="165.8" y1="26.2" x2="172.2" y2="19.8" stroke="#dc3545" stroke-width="1.8" stroke-linecap="round"/>
+        </g>
+      </g>
+      <g id="seg-server-internet">
+        <line x1="234" y1="23" x2="304" y2="23" stroke="currentColor" stroke-width="1.6"/>
+        <g class="seg-x">
+          <circle cx="269" cy="23" r="6" fill="#ffffff"/>
+          <line x1="265.8" y1="19.8" x2="272.2" y2="26.2" stroke="#dc3545" stroke-width="1.8" stroke-linecap="round"/>
+          <line x1="265.8" y1="26.2" x2="272.2" y2="19.8" stroke="#dc3545" stroke-width="1.8" stroke-linecap="round"/>
+        </g>
+      </g>
+      <g id="seg-internet-mobile">
+        <line x1="334" y1="23" x2="404" y2="23" stroke="currentColor" stroke-width="1.6"/>
+        <g class="seg-x">
+          <circle cx="369" cy="23" r="6" fill="#ffffff"/>
+          <line x1="365.8" y1="19.8" x2="372.2" y2="26.2" stroke="#dc3545" stroke-width="1.8" stroke-linecap="round"/>
+          <line x1="365.8" y1="26.2" x2="372.2" y2="19.8" stroke="#dc3545" stroke-width="1.8" stroke-linecap="round"/>
+        </g>
+      </g>
+
+      <!-- 1. Module, split top/bottom: GPS fix status / module network status -->
+      <g clip-path="url(#moduleClip)">
+        <g id="module-gps-half">
+          <rect x="2" y="8" width="36" height="15" fill="currentColor"/>
+          <title>GPS fix status</title>
+        </g>
+        <g id="module-net-half">
+          <rect x="2" y="23" width="36" height="15" fill="currentColor"/>
+          <title>Module network status</title>
+        </g>
+      </g>
+      <rect x="2" y="8" width="36" height="30" rx="6" fill="none" stroke="#2c3e50" stroke-width="1.3"/>
+      <line x1="3" y1="23" x2="37" y2="23" stroke="#ffffff" stroke-width="1"/>
+      <path d="M20 12 v4 M17.5 15 l2.5 2.5 2.5-2.5" stroke="#ffffff" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="20" cy="30.5" r="2" fill="#ffffff"/>
+      <text x="20" y="45" font-size="7.2" fill="#2c3e50" text-anchor="middle" font-weight="600">Module</text>
+
+      <!-- 2. Internet (cloud) -->
+      <g>
+        <path d="M108 30 a8 8 0 0 1 2-15.8 a10 10 0 0 1 19-3.6 a7.5 7.5 0 0 1 4.5 14 z"
+              fill="#eaf3ff" stroke="#007bff" stroke-width="1.3"/>
+        <text x="119" y="45" font-size="7.2" fill="#2c3e50" text-anchor="middle" font-weight="600">Internet</text>
+      </g>
+
+      <!-- 3. Server (Firebase) -->
+      <g>
+        <rect x="200" y="8" width="38" height="30" rx="6" fill="#eaf3ff" stroke="#28a745" stroke-width="1.3"/>
+        <rect x="206" y="13" width="26" height="7" rx="2" fill="none" stroke="#28a745" stroke-width="1.3"/>
+        <rect x="206" y="22" width="26" height="7" rx="2" fill="none" stroke="#28a745" stroke-width="1.3"/>
+        <circle cx="211" cy="16.5" r="1.2" fill="#28a745"/>
+        <circle cx="211" cy="25.5" r="1.2" fill="#28a745"/>
+        <text x="219" y="45" font-size="7.2" fill="#2c3e50" text-anchor="middle" font-weight="600">Server</text>
+      </g>
+
+      <!-- 4. Internet (cloud) again -->
+      <g>
+        <path d="M308 30 a8 8 0 0 1 2-15.8 a10 10 0 0 1 19-3.6 a7.5 7.5 0 0 1 4.5 14 z"
+              fill="#eaf3ff" stroke="#007bff" stroke-width="1.3"/>
+        <text x="319" y="45" font-size="7.2" fill="#2c3e50" text-anchor="middle" font-weight="600">Internet</text>
+      </g>
+
+      <!-- 5. Mobile (live report) -->
+      <g>
+        <rect x="400" y="6" width="20" height="34" rx="4" fill="#eaf3ff" stroke="#e63946" stroke-width="1.3"/>
+        <rect x="403" y="10" width="14" height="22" rx="1" fill="none" stroke="#e63946" stroke-width="1"/>
+        <circle cx="410" cy="34.5" r="1.4" fill="#e63946"/>
+        <text x="410" y="45" font-size="7.2" fill="#2c3e50" text-anchor="middle" font-weight="600">Mobile</text>
+      </g>
+    </svg>
+</div>
+</div>
 <div id="menu-bar">
   <button id="menu-btn" title="Trip History">
     <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -351,24 +534,17 @@ h2 {
 <div id="tile-warning">Map tiles blocked — check your MapTiler API key's allowed domains.</div>
 </div>
 <script>
-// ---------------------------------------------------------------------------
-// DATA SOURCE: Firebase Realtime Database (was ThingSpeak before -- swapped
-// out here, nothing else in this file touched). orderBy="$key" + limitToLast
-// works because Firebase push keys are chronologically sortable, so this
-// gives us the most recent N fixes just like the old ThingSpeak "results=50"
-// param did.
 const FIREBASE_HOST = "city-gps-tracker-default-rtdb.asia-southeast1.firebasedatabase.app";
 const FIREBASE_PATH = "/gps_history.json";
 const url = `https://${FIREBASE_HOST}${FIREBASE_PATH}?orderBy=%22$key%22&limitToLast=200`;
-// Separate node used to persist completed trips (so trip history survives a
-// page reload / is visible in the Firebase console / syncs across devices).
 const TRIPS_PATH = "/trip_history.json";
 const tripsUrl = `https://${FIREBASE_HOST}${TRIPS_PATH}`;
-// ---------------------------------------------------------------------------
+// Connectivity heartbeat pushed by the firmware every ~5s regardless of GPS fix status
+// (see sendDeviceStatus() in the .ino) -- carries the module's real netOk + hasFix, so
+// the dashboard doesn't have to guess connectivity purely from GPS-fix freshness.
+const DEVICE_STATUS_PATH = "/device_status.json";
+const deviceStatusUrl = `https://${FIREBASE_HOST}${DEVICE_STATUS_PATH}?orderBy=%22$key%22&limitToLast=1`;
 
-// Saves one finished trip to Firebase under /trips (POST = Firebase generates
-// a new chronologically-sortable push key automatically, just like the GPS
-// fixes themselves).
 function saveTripToFirebase(trip) {
   fetch(tripsUrl, {
     method: 'POST',
@@ -379,9 +555,6 @@ function saveTripToFirebase(trip) {
   });
 }
 
-// Loads any previously-saved trips from Firebase once at startup, so trip
-// history isn't lost on a page reload or when opening the tracker on another
-// device/browser.
 function loadTripsFromFirebase() {
   fetch(tripsUrl)
     .then(function(res) { return res.json(); })
@@ -396,31 +569,92 @@ function loadTripsFromFirebase() {
     });
 }
 
-// Leaflet map init (ek hi baar)
-const MAPTILER_KEY = "uqDjOTcIKm28iF924vhH"; // same key used for every style below
+// Reads the module's latest self-reported connectivity heartbeat and applies it:
+// netOk drives both the Module<->Internet line AND the Module node's bottom half;
+// hasFix drives the Module node's top half. This is what lets the map diagram show
+// "internet stable, GPS still searching" instead of looking dead while waiting for
+// a first fix -- and flip the top half green the instant a fix lands.
+function fetchDeviceStatus() {
+  fetch(deviceStatusUrl)
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (!data) {
+        // No heartbeat has ever arrived -- treat as unknown/down rather than leaving
+        // stale green dots up.
+        updateDiagramFromStatus({ moduleInternetOk: false });
+        updateModuleNode({ netOk: false, hasFix: false });
+        return;
+      }
+      const keys = Object.keys(data);
+      const latest = data[keys[keys.length - 1]];
+      updateDiagramFromStatus({ moduleInternetOk: !!latest.netOk });
+      updateModuleNode({ netOk: !!latest.netOk, hasFix: !!latest.hasFix });
+    })
+    .catch(function(err) {
+      console.error('Failed to fetch device status:', err);
+      updateDiagramFromStatus({ moduleInternetOk: false });
+      updateModuleNode({ netOk: false, hasFix: false });
+    });
+}
 
-// The two MapTiler raster styles in use, same key for both. "hybrid" = satellite
-// imagery WITH roads/labels drawn on top (plain "satellite" would have no roads).
+// Colors the Module node's two halves in the map diagram: top = GPS fix status,
+// bottom = the module's own network/internet status (netOk).
+function updateModuleNode({ netOk, hasFix }) {
+  const gpsHalf = document.getElementById('module-gps-half');
+  const netHalf = document.getElementById('module-net-half');
+  if (gpsHalf) gpsHalf.classList.toggle('half-offline', !hasFix);
+  if (netHalf) netHalf.classList.toggle('half-offline', !netOk);
+}
+
+const MAPTILER_KEY = "uqDjOTcIKm28iF924vhH";
+
 const MAP_STYLES = [
   { id: 'openstreetmap', label: 'Streets (OSM)', ext: 'png' },
   { id: 'hybrid',        label: 'Hybrid (Satellite+Roads)', ext: 'jpg' }
 ];
-const tileLayerCache = {}; // styleId -> L.tileLayer instance, built lazily on first use
+const tileLayerCache = {};
 let currentStyleId = 'openstreetmap';
 
-// Updates a stat card's value text WITHOUT touching the surrounding box/DOM
-// structure. No-ops when the text hasn't actually changed (avoids pointless
-// flashes), and briefly re-triggers the CSS fade-in animation when it has, so
-// numbers/status change smoothly in place instead of the card re-rendering.
 function setStatValue(el, text) {
   if (!el || el.textContent === text) return;
   el.textContent = text;
   el.classList.remove('value-flash');
-  void el.offsetWidth; // restart the CSS animation
+  void el.offsetWidth;
   el.classList.add('value-flash');
 }
 
-// Great-circle distance in km between two lat/lng points (Haversine formula).
+// Colors one connection group in the network-flow diagram red/green.
+// segId matches one of the <g id="seg-..."> groups in the SVG.
+function setSegmentConnected(segId, isConnected) {
+  const el = document.getElementById(segId);
+  if (!el) return;
+  el.classList.toggle('seg-offline', !isConnected);
+}
+
+// Updates all four hops. The firmware (as of the netOk/hasFix update) now pushes its
+// own real cellular/data status to /device_status.json every ~5s regardless of GPS fix
+// status, so Module<->Internet is driven by that real reading (see fetchDeviceStatus()
+// below) rather than guessed from GPS-fix freshness like it used to be.
+//   moduleInternetOk -> Module<->Internet (from the firmware's own netOk, via /device_status.json)
+//   firebaseReachable -> Internet<->Server, Server<->Internet (did our own fetch to Firebase succeed)
+//   browserOnline -> Internet<->Mobile (this browser's own connection)
+function updateDiagramFromStatus({ moduleInternetOk, firebaseReachable, browserOnline }) {
+  if (moduleInternetOk !== undefined) {
+    setSegmentConnected('seg-module-internet', moduleInternetOk);
+  }
+  if (firebaseReachable !== undefined) {
+    setSegmentConnected('seg-internet-server', firebaseReachable);
+    setSegmentConnected('seg-server-internet', firebaseReachable);
+  }
+  if (browserOnline !== undefined) {
+    setSegmentConnected('seg-internet-mobile', browserOnline);
+  }
+}
+// Browser-level connectivity (this phone/PC has no internet at all) --
+// only the Internet<->Mobile hop, the other three are unaffected by this event.
+window.addEventListener('offline', () => updateDiagramFromStatus({ browserOnline: false }));
+window.addEventListener('online', () => updateDiagramFromStatus({ browserOnline: navigator.onLine }));
+
 function haversineKm(lat1, lon1, lat2, lon2) {
   const R = 6371;
   const toRad = d => d * Math.PI / 180;
@@ -431,53 +665,27 @@ function haversineKm(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-let topSpeedKmh = 0; // highest speed reading seen so far this session -- never decreases
+let topSpeedKmh = 0;
 let map = null;
 let pathLine = null;
 let startMarker = null;
 let liveMarker = null;
 
-// ---- Trip tracking state (persists across fetches, survives Firebase's
-// sliding 200-record window) ----
-// fixedTripStart* = the LOCKED start point/time of the current trip. Green dot
-// (start marker) is drawn here and never moves just because old records aged
-// out of the Firebase query window -- it only moves when a genuine new trip
-// is detected below.
 let fixedTripStartPoint = null;
 let fixedTripStartTime = null;
-// currentTripPoints = the smoothed route of the trip currently in progress,
-// built up incrementally (point-by-point, exactly once per point) below --
-// unlike the raw Firebase window, this never loses points as the window slides.
 let currentTripPoints = [];
-// allTrips = every trip that has been finalized (vehicle stopped 5+ minutes),
-// each one a frozen {startTime, endTime, points} record for the history menu.
 let allTrips = [];
-// viewingTripKey = 'live' (map follows the current trip) or an index into
-// allTrips (map shows a frozen snapshot of that past trip instead).
 let viewingTripKey = 'live';
-// clusterAnchor* = the position the vehicle is currently "parked near" (within
-// STOP_RADIUS_KM). Used to measure how long it has stayed in one place.
 let clusterAnchorPoint = null;
 let clusterAnchorTime = null;
-// Watermark so each fetch only processes points we haven't already folded
-// into the trip state -- makes this immune to the window shrinking/growing.
 let lastProcessedTime = null;
-const STOP_RADIUS_KM = 0.02;      // ~20m -- GPS jitter tolerance for "same place"
-const STOP_DURATION_MS = 5 * 60 * 1000; // 5 minutes stationary = trip ends
-// Path-jitter filter: while parked, cheap GPS modules can report fixes
-// 10-20m away from the true position on any single reading. A plain
-// "far enough from the last point" check still lets ONE noisy fix through,
-// which is what was drawing the zigzag/star pattern while stationary.
-// Fix: only accept a point as real movement once PATH_MOVE_CONFIRM_COUNT
-// consecutive fixes stay away from the anchor -- a genuine drive keeps
-// moving away each time, a jitter spike snaps back close on the very next fix.
-const PATH_STATIONARY_RADIUS_KM = 0.02; // ~20m -- fixes inside this radius of the last plotted point are treated as "still parked"
-const PATH_MOVE_CONFIRM_COUNT = 2; // consecutive outside-radius fixes needed before a move is accepted
+const STOP_RADIUS_KM = 0.02;
+const STOP_DURATION_MS = 5 * 60 * 1000;
+const PATH_STATIONARY_RADIUS_KM = 0.02;
+const PATH_MOVE_CONFIRM_COUNT = 2;
 let pendingMoveCount = 0;
 let pendingMovePoint = null;
 
-// Decides whether a new raw GPS fix should be appended to the current trip's
-// plotted path, applying the anchor+debounce jitter filter above.
 function maybeAddPathPoint(pt) {
   if (currentTripPoints.length === 0) {
     currentTripPoints.push(pt);
@@ -488,7 +696,6 @@ function maybeAddPathPoint(pt) {
   const anchor = currentTripPoints[currentTripPoints.length - 1];
   const dist = haversineKm(anchor[0], anchor[1], pt[0], pt[1]);
   if (dist < PATH_STATIONARY_RADIUS_KM) {
-    // Still basically parked -- ignore so the jitter never touches the line.
     pendingMoveCount = 0;
     pendingMovePoint = null;
     return;
@@ -501,14 +708,12 @@ function maybeAddPathPoint(pt) {
     pendingMovePoint = null;
   }
 }
-let hasAutoFitted = false; // ensures we only auto zoom/pan on the very first load
-let lastPathBounds = null; // remembers latest trajectory bounds for the recenter button
-let tileErrorShown = false; // avoid spamming the warning banner on every failed tile
-let followMode = true; // true = map keeps auto-panning to follow the car every update
-let lastKnownPoint = null; // most recent car position, used when recenter button re-enables follow
+let hasAutoFitted = false;
+let lastPathBounds = null;
+let tileErrorShown = false;
+let followMode = true;
+let lastKnownPoint = null;
 
-// Re-center button: agar history dekh rahe hain to pehle live view par wapas
-// jao; warna follow mode ON karke turant latest point par snap karo.
 document.getElementById('recenter-btn').addEventListener('click', function() {
   if (viewingTripKey !== 'live') {
     selectTrip('live');
@@ -522,14 +727,12 @@ document.getElementById('recenter-btn').addEventListener('click', function() {
   }
 });
 
-// Style toggle button: single click flips between Street (OSM) and Hybrid.
 document.getElementById('style-toggle-btn').addEventListener('click', function() {
   const nextStyleId = currentStyleId === 'openstreetmap' ? 'hybrid' : 'openstreetmap';
   switchMapStyle(nextStyleId);
   this.classList.toggle('hybrid-active', nextStyleId === 'hybrid');
 });
 
-// ---- Hamburger menu: trip-history dropdown ----
 document.getElementById('menu-btn').addEventListener('click', function(e) {
   e.stopPropagation();
   const panel = document.getElementById('trip-panel');
@@ -537,7 +740,6 @@ document.getElementById('menu-btn').addEventListener('click', function(e) {
   if (willShow) renderTripMenu();
   panel.style.display = willShow ? 'block' : 'none';
 });
-// Tap anywhere outside the open panel to close it.
 document.addEventListener('click', function(e) {
   const panel = document.getElementById('trip-panel');
   if (panel.style.display === 'block' && !panel.contains(e.target) && e.target.id !== 'menu-btn') {
@@ -570,8 +772,6 @@ function formatTripLabel(trip) {
   return `${start.toLocaleDateString()} · ${formatClock(start)} – ${formatClock(end)} · ${tripDistanceKm(trip).toFixed(1)} km`;
 }
 
-// Builds/refreshes the dropdown list: "Live Tracking" first, then every
-// completed trip (most recent first), highlighting whichever is active.
 function renderTripMenu() {
   const panel = document.getElementById('trip-panel');
   let html = `<div class="trip-item ${viewingTripKey === 'live' ? 'active' : ''}" data-trip="live">🔴 Live Tracking</div>`;
@@ -591,16 +791,12 @@ function renderTripMenu() {
   });
 }
 
-// Switches what the map shows: either the live trip (auto-updating, follows
-// the car every refresh) or a frozen snapshot of one past trip's full route.
 function selectTrip(key) {
   viewingTripKey = key;
   const statusBar = document.getElementById('trip-status-bar');
   if (key === 'live') {
     followMode = true;
     statusBar.style.display = 'none';
-    // Snap straight back to the car; the next auto-refresh redraws the live
-    // path/markers since viewingTripKey is back to 'live'.
     if (map && lastKnownPoint) {
       map.panTo(lastKnownPoint, { animate: true });
     } else if (map && lastPathBounds) {
@@ -615,8 +811,6 @@ function selectTrip(key) {
   }
 }
 
-// Draws one completed trip's full route as a frozen line with a green start
-// dot and a red end dot, and zooms the map to fit the whole route.
 function drawStaticTrip(trip) {
   initMapIfNeeded();
   if (pathLine) map.removeLayer(pathLine);
@@ -630,17 +824,12 @@ function drawStaticTrip(trip) {
   map.fitBounds(pathLine.getBounds(), { padding: [30, 30] });
 }
 
-// Top-view car SVG. Default artwork points "up" (north = 0deg heading).
 const CAR_SVG = `
 <svg class="car-rotate" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
   <g>
-    <!-- car body (top-down view) -->
     <rect x="12" y="4" width="16" height="30" rx="6" fill="#e63946" stroke="#7a1620" stroke-width="1"/>
-    <!-- windshield -->
     <rect x="15" y="8" width="10" height="6" rx="2" fill="#a8dadc"/>
-    <!-- rear window -->
     <rect x="15" y="25" width="10" height="6" rx="2" fill="#a8dadc"/>
-    <!-- wheels -->
     <rect x="8" y="9" width="4" height="7" rx="1.5" fill="#222"/>
     <rect x="28" y="9" width="4" height="7" rx="1.5" fill="#222"/>
     <rect x="8" y="22" width="4" height="7" rx="1.5" fill="#222"/>
@@ -648,7 +837,6 @@ const CAR_SVG = `
   </g>
 </svg>`;
 
-// Builds a car marker icon rotated to face the given heading (degrees, 0 = north/up)
 function getCarIcon(headingDeg) {
   return L.divIcon({
     className: 'car-icon-marker',
@@ -659,7 +847,6 @@ function getCarIcon(headingDeg) {
   });
 }
 
-// Compass bearing (0-360, 0=north) from point A to point B
 function computeBearing(latA, lonA, latB, lonB) {
   const toRad = d => d * Math.PI / 180;
   const toDeg = r => r * 180 / Math.PI;
@@ -670,10 +857,8 @@ function computeBearing(latA, lonA, latB, lonB) {
   return (toDeg(Math.atan2(y, x)) + 360) % 360;
 }
 
-let lastHeading = 0; // keeps the car facing its last known direction if no new movement
+let lastHeading = 0;
 
-// Builds (or reuses from cache) the L.tileLayer for a given MapTiler style id,
-// wiring up the shared tile-error/tile-load warning banner the first time.
 function getOrCreateTileLayer(styleId) {
   if (tileLayerCache[styleId]) return tileLayerCache[styleId];
   const style = MAP_STYLES.find(s => s.id === styleId);
@@ -701,8 +886,6 @@ function getOrCreateTileLayer(styleId) {
   return layer;
 }
 
-// Swaps the active base layer. Only touches the tile layer -- path/markers/zoom/
-// pan are never affected, so switching styles never disturbs follow mode etc.
 function switchMapStyle(styleId) {
   if (!map || styleId === currentStyleId) return;
   const oldLayer = tileLayerCache[currentStyleId];
@@ -715,18 +898,11 @@ function switchMapStyle(styleId) {
 function initMapIfNeeded() {
  if (map) return;
  map = L.map('live-map-frame').setView([20.95575, 84.47108], 15);
- getOrCreateTileLayer(currentStyleId).addTo(map); // default style on first load
+ getOrCreateTileLayer(currentStyleId).addTo(map);
 
- // Leaflet sometimes computes the container size before layout/CSS fully settles;
- // force a resize check shortly after init so tiles/markers align correctly.
  setTimeout(() => map.invalidateSize(), 200);
  window.addEventListener('resize', () => map.invalidateSize());
 
- // FIX: auto-follow the car every update UNTIL the user manually drags/zooms/scrolls.
- // We listen on the raw DOM container (mousedown/touchstart/wheel/dblclick) instead of
- // Leaflet's semantic 'dragstart'/'zoomstart' events, because those also fire for our
- // own programmatic panTo()/fitBounds() calls -- raw input events only fire for a real
- // user gesture, so they don't get confused with the follow-logic's own map movements.
  const mapContainer = map.getContainer();
  const disableFollow = () => { followMode = false; };
  mapContainer.addEventListener('mousedown', disableFollow);
@@ -735,13 +911,9 @@ function initMapIfNeeded() {
  mapContainer.addEventListener('dblclick', disableFollow);
 }
 
-// Converts the raw Firebase gps_history object ({pushKey: {lat,lng,speed,ts}, ...})
-// into the same {channel, feeds:[{field1,field2,field3,created_at}, ...]} shape the
-// rest of this file was already written to expect (field1=lat, field2=lng,
-// field3=speed, created_at=timestamp) -- so nothing below this needs to change.
 function firebaseToFeedsFormat(fbData) {
   if (!fbData) return { channel: { name: "City GPS Tracker" }, feeds: [] };
-  const keys = Object.keys(fbData).sort(); // push keys sort chronologically
+  const keys = Object.keys(fbData).sort();
   const feeds = keys.map(k => {
     const entry = fbData[k];
     return {
@@ -768,7 +940,6 @@ document.getElementById('vehicle-card').classList.remove('connected');
 document.getElementById('vehicle-card').classList.add('disconnected');
 return;
 }
-// ---- Build the trajectory point list (valid lat/lng only), timestamps saath saath ----
 const trackPoints = [];
 const trackTimes = [];
 data.feeds.forEach(f => {
@@ -779,20 +950,12 @@ data.feeds.forEach(f => {
  trackTimes.push(new Date(f.created_at).getTime());
  }
 });
-// ---- Trip detection: sirf naye (abhi tak process na hue) points par chalte
-// hain, isliye purane points Firebase ke 200-record window se bahar nikal
-// jayein to bhi trip-start galti se aage nahi khiskega. Jab bike ek hi jagah
-// (~20m ke andar) 5+ minute tak rukti hai aur fir dobara move karti hai, wahi
-// se naya trip lock ho jata hai -- purani trip currentTripPoints se allTrips
-// me freeze ho jati hai (history menu ke liye), aur start marker (green dot)
-// sirf tabhi hilta hai, warna fixed rehta hai.
 for (let i = 0; i < trackPoints.length; i++) {
   const t = trackTimes[i];
-  if (lastProcessedTime !== null && t <= lastProcessedTime) continue; // already seen
+  if (lastProcessedTime !== null && t <= lastProcessedTime) continue;
   const pt = trackPoints[i];
 
   if (clusterAnchorPoint === null) {
-    // sabse pehla point jo kabhi dekha -- yahi se trip #1 shuru
     clusterAnchorPoint = pt;
     clusterAnchorTime = t;
     if (fixedTripStartPoint === null) {
@@ -805,11 +968,8 @@ for (let i = 0; i < trackPoints.length; i++) {
   } else {
     const distKm = haversineKm(clusterAnchorPoint[0], clusterAnchorPoint[1], pt[0], pt[1]);
     if (distKm > STOP_RADIUS_KM) {
-      // anchor se door chala gaya -- check karo anchor par kitni der ruka tha
       const clusterDuration = (lastProcessedTime !== null ? lastProcessedTime : clusterAnchorTime) - clusterAnchorTime;
       if (clusterDuration >= STOP_DURATION_MS) {
-        // genuine 5+ min stop ke baad movement -- purani trip ko history me
-        // save karo (agar usme kam se kam 2 points hain), fir naya trip lock karo
         if (currentTripPoints.length > 1) {
           const finishedTrip = {
             startTime: fixedTripStartTime,
@@ -817,7 +977,7 @@ for (let i = 0; i < trackPoints.length; i++) {
             points: currentTripPoints.slice()
           };
           allTrips.push(finishedTrip);
-          saveTripToFirebase(finishedTrip); // persist so it shows up in the Firebase console too
+          saveTripToFirebase(finishedTrip);
         }
         fixedTripStartPoint = pt;
         fixedTripStartTime = t;
@@ -825,29 +985,18 @@ for (let i = 0; i < trackPoints.length; i++) {
         pendingMoveCount = 0;
         pendingMovePoint = null;
       } else {
-        // 5 min se kam hi ruka tha -- same trip continue, bas anchor+debounce
-        // jitter filter ke saath point jodo (upar maybeAddPathPoint dekho)
         maybeAddPathPoint(pt);
       }
-      clusterAnchorPoint = pt; // anchor naye position par reset
+      clusterAnchorPoint = pt;
       clusterAnchorTime = t;
     } else {
-      // radius ke andar hai (khadi/ruki hui) -- yahan bhi wahi anchor+debounce
-      // filter chalta hai, isliye single noisy fix path ko zigzag nahi karega
       maybeAddPathPoint(pt);
     }
   }
   lastProcessedTime = t;
 }
 
-// Live trip ka trajectory ab currentTripPoints me hi incrementally maintained
-// hai (upar wale loop me), isliye Firebase ke sliding 200-record window se
-// bilkul independent hai -- purane points window se nikal bhi jayein to route
-// nahi tootega.
-let tripPoints = currentTripPoints.length > 0 ? currentTripPoints : trackPoints; // safety fallback
-// ---- Top Speed / Total Distance stats ----
-// Top speed: highest reading seen so far this session (never decreases, even
-// once older high-speed points drop out of the 200-entry Firebase window).
+let tripPoints = currentTripPoints.length > 0 ? currentTripPoints : trackPoints;
 let maxSpeedInWindow = 0;
 data.feeds.forEach(f => {
   const s = parseFloat(f.field3);
@@ -855,18 +1004,14 @@ data.feeds.forEach(f => {
 });
 topSpeedKmh = Math.max(topSpeedKmh, maxSpeedInWindow);
 setStatValue(document.getElementById('top-speed-value'), Math.round(topSpeedKmh).toString());
-// Total distance: sum of point-to-point distances across the currently
-// available history window (up to the last 200 fixes).
 let distanceKm = 0;
 for (let i = 1; i < trackPoints.length; i++) {
   distanceKm += haversineKm(trackPoints[i - 1][0], trackPoints[i - 1][1], trackPoints[i][0], trackPoints[i][1]);
 }
 setStatValue(document.getElementById('total-distance-value'), distanceKm.toFixed(1));
-// Card: sirf latest feed dikhate hain (second/purana box hata diya)
 const cardsToShow = data.feeds.slice(-1);
 for (let i = cardsToShow.length - 1; i >= 0; i--) {
 const feed = cardsToShow[i];
-// Custom Date & HH.MM AM/PM Format Converter
 const dateObj = new Date(feed.created_at);
 const dateString = dateObj.toLocaleDateString();
 let hours = dateObj.getHours();
@@ -879,7 +1024,6 @@ const formattedTime = `${dateString}, ${hoursString}.${minutes} ${ampm}`;
 const pingTime = dateObj.getTime();
 const nowTime = new Date().getTime();
 const diffTotalMins = Math.floor((nowTime - pingTime) / (1000 * 60));
-// --- DYNAMIC TIME AGO LOGIC ---
 let agoText = "";
 if (diffTotalMins < 1) {
 agoText = "<b>(Just Now)</b>";
@@ -905,48 +1049,31 @@ const card = `
 </div>`;
 container.innerHTML += card;
 }
-// ---- Draw trajectory on Leaflet map (sirf jab live view active ho -- agar
-// user history menu se koi purani trip dekh raha hai to yahan map ko chhedte
-// nahi, wo static hi rehta hai jab tak "Go Live" na dabaye) ----
 initMapIfNeeded();
 if (viewingTripKey === 'live' && tripPoints.length > 0) {
- // Path line: current trip ke locked start se ab tak vehicle jin-jin points se
- // hokar gaya, un sabko jodkar actual trajectory banti hai (seedhi line nahi).
  if (pathLine) { map.removeLayer(pathLine); }
  pathLine = L.polyline(tripPoints, { color: '#007bff', weight: 4, opacity: 0.8 }).addTo(map);
- // Start marker (green dot) -- locked trip-start point par fixed, sirf tab
- // hilta hai jab bike genuinely 5+ min ruk kar dobara move kare.
  if (startMarker) { map.removeLayer(startMarker); }
  startMarker = L.circleMarker(fixedTripStartPoint || tripPoints[0], { radius: 6, color: '#28a745', fillColor: '#28a745', fillOpacity: 1 })
  .addTo(map).bindPopup("Start");
- // Latest/live marker (top-view car icon, rotated to face direction of travel)
- // -- same smoothed/filtered point jo line ka end hai use karte hain, isliye
- // GPS jitter se marker khadi bike par wobble/ghoomta hua nahi dikhega.
  const lastPoint = tripPoints[tripPoints.length - 1];
  if (tripPoints.length >= 2) {
    const prevPoint = tripPoints[tripPoints.length - 2];
-   // only update heading if the car actually moved (avoids jitter when stationary)
    if (prevPoint[0] !== lastPoint[0] || prevPoint[1] !== lastPoint[1]) {
      lastHeading = computeBearing(prevPoint[0], prevPoint[1], lastPoint[0], lastPoint[1]);
    }
  }
  if (liveMarker) { map.removeLayer(liveMarker); }
  liveMarker = L.marker(lastPoint, { icon: getCarIcon(lastHeading) }).addTo(map).bindPopup("Latest position");
- // Remember bounds/point for the manual re-center button
  lastPathBounds = pathLine.getBounds();
  lastKnownPoint = lastPoint;
- // Fit map to show the whole path on the very first load only.
  if (!hasAutoFitted) {
    map.fitBounds(lastPathBounds, { padding: [30, 30] });
    hasAutoFitted = true;
  } else if (followMode) {
-   // FIX: keep following the car on every update (pan only, never re-zoom) so it
-   // never drifts outside the visible area. Stops automatically the moment the
-   // user drags/zooms/scrolls the map themselves; resumes on Recenter tap.
    map.panTo(lastPoint, { animate: true });
  }
 }
-// Vehicle Connection Status Logic (Checking if latest ping is within 3 minutes)
 const latestFeed = data.feeds[data.feeds.length - 1];
 const lastPingTime = new Date(latestFeed.created_at).getTime();
 const currentTime = new Date().getTime();
@@ -956,10 +1083,16 @@ if (diffMinutes <= 3) {
   setStatValue(document.getElementById('vehicle-status'), "Connected");
   vehicleCard.classList.remove('disconnected');
   vehicleCard.classList.add('connected');
+  // Fetch succeeded (we're inside .then), so Internet<->Server<->Internet is up.
+  // Module<->Internet is handled separately by fetchDeviceStatus(), using the
+  // firmware's own real netOk instead of guessing from fix freshness.
+  updateDiagramFromStatus({ firebaseReachable: true });
 } else {
   setStatValue(document.getElementById('vehicle-status'), "Disconnected");
   vehicleCard.classList.remove('connected');
   vehicleCard.classList.add('disconnected');
+  // Fetch itself still succeeded -- only Internet<->Server<->Internet is confirmed here.
+  updateDiagramFromStatus({ firebaseReachable: true });
 }
 if (!tileErrorShown) {
   const statusCard = document.getElementById('status-card');
@@ -967,8 +1100,6 @@ if (!tileErrorShown) {
   statusCard.classList.remove('error');
   statusCard.classList.add('live');
 }
-// Trip-history dropdown ko sync me rakho agar wo abhi open hai (e.g. upar
-// koi trip finalize hui ho aur list me naya entry aaya ho).
 if (document.getElementById('trip-panel').style.display === 'block') {
   renderTripMenu();
 }
@@ -983,13 +1114,18 @@ const vehicleCard = document.getElementById('vehicle-card');
 setStatValue(document.getElementById('vehicle-status'), "Disconnected");
 vehicleCard.classList.remove('connected');
 vehicleCard.classList.add('disconnected');
+// The fetch to Firebase itself failed -- that's specifically the
+// Internet<->Server path. Module<->Internet is left to fetchDeviceStatus()'s
+// own catch handler, which marks it down independently.
+updateDiagramFromStatus({ firebaseReachable: false });
 });
 }
-// Startup: load any past trips already saved in Firebase, then start the live feed
+updateDiagramFromStatus({ browserOnline: navigator.onLine });
 loadTripsFromFirebase();
 fetchAndRenderData();
-// 15 seconds real-time auto-refresh loop
+fetchDeviceStatus();
 setInterval(fetchAndRenderData, 2000);
+setInterval(fetchDeviceStatus, 2000);
 </script>
 </body>
 </html>
