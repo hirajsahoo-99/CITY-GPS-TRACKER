@@ -320,7 +320,7 @@ h2 {
   transition: color 0.3s ease;
 }
 #network-diagram g[id^="seg-"] line {
-  opacity: 0.99; /* green line shown at 70% opacity */
+  opacity: 0.8; /* green line shown at 70% opacity */
 }
 #network-diagram g[id^="seg-"].seg-offline line {
   opacity: 1; /* grey offline state stays fully opaque */
@@ -340,6 +340,20 @@ h2 {
 #network-diagram g[id^="seg-"].seg-offline line {
   filter: none;
   animation: none;
+}
+#network-diagram g[id^="seg-"] .seg-pulse {
+  fill: currentColor;
+  filter: drop-shadow(0 0 2px currentColor);
+  animation: segPulseMove 1.6s linear infinite;
+}
+@keyframes segPulseMove {
+  0%   { transform: translateX(0); opacity: 0; }
+  12%  { opacity: 1; }
+  88%  { opacity: 1; }
+  100% { transform: translateX(78px); opacity: 0; }
+}
+#network-diagram g[id^="seg-"].seg-offline .seg-pulse {
+  display: none; /* no traveling dot on a down connection */
 }
 #network-diagram g[id^="seg-"] .seg-x {
   opacity: 0;
@@ -400,6 +414,7 @@ h2 {
            only when offline) so it can reflect that hop's status independently. -->
       <g id="seg-module-internet">
         <line x1="34" y1="23" x2="112" y2="23" stroke="currentColor" stroke-width="0.6"/>
+        <circle class="seg-pulse" cx="34" cy="23" r="0.8"/>
         <g class="seg-x">
           <circle cx="73" cy="23" r="6" fill="#ffffff"/>
           <line x1="69.8" y1="19.8" x2="76.2" y2="26.2" stroke="#dc3545" stroke-width="1.8" stroke-linecap="round"/>
@@ -408,6 +423,7 @@ h2 {
       </g>
       <g id="seg-internet-server">
         <line x1="126" y1="23" x2="204" y2="23" stroke="currentColor" stroke-width="0.6"/>
+        <circle class="seg-pulse" cx="126" cy="23" r="0.8"/>
         <g class="seg-x">
           <circle cx="165" cy="23" r="6" fill="#ffffff"/>
           <line x1="161.8" y1="19.8" x2="168.2" y2="26.2" stroke="#dc3545" stroke-width="1.8" stroke-linecap="round"/>
@@ -416,6 +432,7 @@ h2 {
       </g>
       <g id="seg-server-internet">
         <line x1="234" y1="23" x2="312" y2="23" stroke="currentColor" stroke-width="0.6"/>
+        <circle class="seg-pulse" cx="234" cy="23" r="0.8"/>
         <g class="seg-x">
           <circle cx="273" cy="23" r="6" fill="#ffffff"/>
           <line x1="269.8" y1="19.8" x2="276.2" y2="26.2" stroke="#dc3545" stroke-width="1.8" stroke-linecap="round"/>
@@ -424,6 +441,7 @@ h2 {
       </g>
       <g id="seg-internet-mobile">
         <line x1="326" y1="23" x2="404" y2="23" stroke="currentColor" stroke-width="0.6"/>
+        <circle class="seg-pulse" cx="326" cy="23" r="0.8"/>
         <g class="seg-x">
           <circle cx="365" cy="23" r="6" fill="#ffffff"/>
           <line x1="361.8" y1="19.8" x2="368.2" y2="26.2" stroke="#dc3545" stroke-width="1.8" stroke-linecap="round"/>
