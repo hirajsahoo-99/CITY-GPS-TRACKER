@@ -343,7 +343,13 @@ function haversineKm(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-let topSpeedKmh = 0;
+// Local (device) calendar-day key, e.g. "2026-9-20" -- used to scope the
+// Top Speed / Total Distance stat cards to today only, so they reset each
+// day instead of accumulating across days.
+function localDateKey(d) {
+  return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
+}
+
 let map = null;
 let pathLine = null;
 let startMarker = null;
@@ -471,6 +477,7 @@ function selectTrip(key) {
   viewingTripKey = key;
   const statusBar = document.getElementById('trip-status-bar');
   if (key === 'live') {
+    if (tripAnimFrameId) { cancelAnimationFrame(tripAnimFrameId); tripAnimFrameId = null; }
     followMode = true;
     statusBar.style.display = 'none';
     if (map && lastKnownPoint) { map.panTo(lastKnownPoint, { animate: true }); }
@@ -510,14 +517,97 @@ function fetchGpsHistoryRange(startTime, endTime) {
     });
 }
 
-function renderTripPath(trip) {
+// ---- Trip playback animation ----------------------------------------
+// Plays the car icon smoothly along a static trip's route from start to
+// end, once, the first time that trip is opened. Subsequent re-opens of
+// the same trip just show the finished route with the car parked at the
+// end (no replay), tracked via trip.animatedOnce.
+let tripAnimFrameId = null;
+
+function computeCumulativeDistances(points) {
+  const dists = [0];
+  for (let i = 1; i < points.length; i++) {
+    dists.push(dists[i - 1] + haversineKm(points[i - 1][0], points[i - 1][1], points[i][0], points[i][1]));
+  }
+  return dists;
+}
+
+function pointAtDistance(points, dists, targetDist) {
+  let idx = 0;
+  while (idx < dists.length - 2 && dists[idx + 1] < targetDist) idx++;
+  const segStart = points[idx];
+  const segEnd = points[Math.min(idx + 1, points.length - 1)];
+  const segLen = dists[Math.min(idx + 1, dists.length - 1)] - dists[idx];
+  const segFrac = segLen > 0 ? Math.min(1, Math.max(0, (targetDist - dists[idx]) / segLen)) : 0;
+  return {
+    lat: segStart[0] + (segEnd[0] - segStart[0]) * segFrac,
+    lng: segStart[1] + (segEnd[1] - segStart[1]) * segFrac,
+    idx: idx,
+    nextIdx: Math.min(idx + 1, points.length - 1)
+  };
+}
+
+function animateCarAlongTrip(trip, points) {
+  if (tripAnimFrameId) { cancelAnimationFrame(tripAnimFrameId); tripAnimFrameId = null; }
+  if (!map || !points || points.length < 2) {
+    if (points && points.length > 0) {
+      liveMarker = L.circleMarker(points[points.length - 1], { radius: 6, color: '#dc3545', fillColor: '#dc3545', fillOpacity: 1 }).addTo(map).bindPopup('End');
+    }
+    return;
+  }
+  const dists = computeCumulativeDistances(points);
+  const totalDist = dists[dists.length - 1];
+  if (totalDist <= 0) {
+    liveMarker = L.circleMarker(points[points.length - 1], { radius: 6, color: '#dc3545', fillColor: '#dc3545', fillOpacity: 1 }).addTo(map).bindPopup('End');
+    return;
+  }
+  const DURATION_MS = Math.min(9000, Math.max(2500, points.length * 90));
+  const initialHeading = computeBearing(points[0][0], points[0][1], points[1][0], points[1][1]);
+  if (liveMarker) { map.removeLayer(liveMarker); }
+  const animMarker = L.marker(points[0], { icon: getCarIcon(initialHeading) }).addTo(map);
+  liveMarker = animMarker;
+  let startTs = null;
+  const runToken = ++animateCarAlongTrip._token;
+
+  function step(ts) {
+    // Bail out if another render/animation superseded this one.
+    if (runToken !== animateCarAlongTrip._token) return;
+    if (startTs === null) startTs = ts;
+    const elapsed = ts - startTs;
+    const frac = Math.min(1, elapsed / DURATION_MS);
+    const targetDist = totalDist * frac;
+    const pos = pointAtDistance(points, dists, targetDist);
+    animMarker.setLatLng([pos.lat, pos.lng]);
+    const heading = computeBearing(points[pos.idx][0], points[pos.idx][1], points[pos.nextIdx][0], points[pos.nextIdx][1]);
+    const el = animMarker.getElement();
+    if (el) {
+      const rotEl = el.querySelector('.car-rotate');
+      if (rotEl) rotEl.style.transform = `rotate(${heading}deg)`;
+    }
+    if (frac < 1) {
+      tripAnimFrameId = requestAnimationFrame(step);
+    } else {
+      tripAnimFrameId = null;
+      animMarker.bindPopup('End');
+    }
+  }
+  tripAnimFrameId = requestAnimationFrame(step);
+}
+animateCarAlongTrip._token = 0;
+
+function renderTripPath(trip, pointsOverride) {
+  const points = pointsOverride || trip.points;
   if (pathLine) map.removeLayer(pathLine);
   if (startMarker) map.removeLayer(startMarker);
   if (liveMarker) map.removeLayer(liveMarker);
-  pathLine = L.polyline(trip.points, { color: '#6c757d', weight: 4, opacity: 0.85 }).addTo(map);
-  startMarker = L.circleMarker(trip.points[0], { radius: 6, color: '#28a745', fillColor: '#28a745', fillOpacity: 1 }).addTo(map).bindPopup('Start');
-  liveMarker = L.circleMarker(trip.points[trip.points.length - 1], { radius: 6, color: '#dc3545', fillColor: '#dc3545', fillOpacity: 1 }).addTo(map).bindPopup('End');
+  animateCarAlongTrip._token++; // invalidate any in-flight animation loop
+  if (tripAnimFrameId) { cancelAnimationFrame(tripAnimFrameId); tripAnimFrameId = null; }
+  pathLine = L.polyline(points, { color: '#6c757d', weight: 4, opacity: 0.85 }).addTo(map);
+  startMarker = L.circleMarker(points[0], { radius: 6, color: '#28a745', fillColor: '#28a745', fillOpacity: 1 }).addTo(map).bindPopup('Start');
   map.fitBounds(pathLine.getBounds(), { padding: [30, 30] });
+  // Play the start->end animation every time this trip is opened (not just
+  // the first time), so re-selecting a trip from the menu always replays it.
+  animateCarAlongTrip(trip, points);
 }
 
 function drawStaticTrip(trip) {
@@ -534,14 +624,14 @@ function drawStaticTrip(trip) {
           trip.points = points;
           trip.isSummaryOnly = false;
         }
-        renderTripPath(trip.points.length > 1 ? trip : { points: fallbackPoints });
+        renderTripPath(trip, trip.points.length > 1 ? trip.points : fallbackPoints);
       })
       .catch(function(err) {
         console.error('Failed to fetch trip path from gps_history:', err);
-        renderTripPath({ points: fallbackPoints });
+        renderTripPath(trip, fallbackPoints);
       });
   } else {
-    renderTripPath(trip);
+    renderTripPath(trip, trip.points);
   }
 }
 
@@ -698,18 +788,41 @@ for (let i = 0; i < trackPoints.length; i++) {
   lastProcessedTime = t;
 }
 let tripPoints = currentTripPoints.length > 0 ? currentTripPoints : trackPoints;
-let maxSpeedInWindow = 0;
-data.feeds.forEach(f => {
-  const s = parseFloat(f.field3);
-  if (!isNaN(s) && s > maxSpeedInWindow) maxSpeedInWindow = s;
+
+// Top Speed and Total Distance are scoped to today's calendar date only,
+// and recomputed fresh from source-of-truth data on every poll:
+//   - closed trips in trip_history whose endTime falls today (accurate
+//     distanceM / maxSpeedKmh from the firmware, survives the raw
+//     gps_history window rolling past 200 records)
+//   - the still-open, in-progress trip (currentTripPoints), if it started
+//     today
+//   - speeds seen in the current raw-feed poll window, for today's data
+// This avoids the old bug where only the last 200 raw pings were
+// considered, so an earlier trip today could silently drop out of the
+// Top Speed / Total Distance totals once the device sent more pings.
+const todayKey = localDateKey(new Date());
+let totalDistanceKm = 0;
+let topSpeedTodayKmh = 0;
+allTrips.forEach(t => {
+  if (localDateKey(new Date(t.endTime)) === todayKey) {
+    totalDistanceKm += tripDistanceKm(t);
+    if (typeof t.maxSpeedKmh === 'number' && t.maxSpeedKmh > topSpeedTodayKmh) {
+      topSpeedTodayKmh = t.maxSpeedKmh;
+    }
+  }
 });
-topSpeedKmh = Math.max(topSpeedKmh, maxSpeedInWindow);
-setStatValue(document.getElementById('top-speed-value'), Math.round(topSpeedKmh).toString());
-let distanceKm = 0;
-for (let i = 1; i < trackPoints.length; i++) {
-  distanceKm += haversineKm(trackPoints[i - 1][0], trackPoints[i - 1][1], trackPoints[i][0], trackPoints[i][1]);
+if (fixedTripStartTime && localDateKey(new Date(fixedTripStartTime)) === todayKey) {
+  for (let i = 1; i < currentTripPoints.length; i++) {
+    totalDistanceKm += haversineKm(currentTripPoints[i - 1][0], currentTripPoints[i - 1][1], currentTripPoints[i][0], currentTripPoints[i][1]);
+  }
 }
-setStatValue(document.getElementById('total-distance-value'), distanceKm.toFixed(1));
+data.feeds.forEach(f => {
+  if (localDateKey(new Date(f.created_at)) !== todayKey) return;
+  const s = parseFloat(f.field3);
+  if (!isNaN(s) && s > topSpeedTodayKmh) topSpeedTodayKmh = s;
+});
+setStatValue(document.getElementById('top-speed-value'), Math.round(topSpeedTodayKmh).toString());
+setStatValue(document.getElementById('total-distance-value'), totalDistanceKm.toFixed(1));
 const cardsToShow = data.feeds.slice(-1);
 for (let i = cardsToShow.length - 1; i >= 0; i--) {
 const feed = cardsToShow[i];
