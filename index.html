@@ -473,11 +473,40 @@ function renderTripMenu() {
   });
 }
 
+function formatDurationMs(ms) {
+  const totalMins = Math.max(0, Math.round(ms / 60000));
+  if (totalMins < 60) return `${totalMins} mint`;
+  const h = Math.floor(totalMins / 60);
+  const m = totalMins % 60;
+  return `${h} hour ${m} mint`;
+}
+
+// Replaces the feeds-container's "latest ping" card with a trip summary
+// card (time range, total time, total km, top speed) while a saved trip
+// is being viewed, instead of showing the live latest-fix card.
+function renderTripSummaryCard(trip) {
+  const container = document.getElementById('feeds-container');
+  const start = new Date(trip.startTime);
+  const end = new Date(trip.endTime);
+  const dateString = start.toLocaleDateString();
+  const durationText = formatDurationMs(trip.endTime - trip.startTime);
+  const distKm = tripDistanceKm(trip);
+  const topSpeed = (typeof trip.maxSpeedKmh === 'number') ? Math.round(trip.maxSpeedKmh) : 0;
+  container.innerHTML = `
+<div class="feed-card latest">
+<div class="time">🕒 ${dateString}, ${formatClock(start)} – ${formatClock(end)} (${durationText})</div>
+<div class="coord"><span class="label">Total KM:</span> ${distKm.toFixed(1)} km</div>
+<div class="coord"><span class="label">Top Speed:</span> ${topSpeed} km/h</div>
+</div>`;
+}
+
 function selectTrip(key) {
   viewingTripKey = key;
   const statusBar = document.getElementById('trip-status-bar');
   if (key === 'live') {
     if (tripAnimFrameId) { cancelAnimationFrame(tripAnimFrameId); tripAnimFrameId = null; }
+    animateCarAlongTrip._token++;
+    if (tripTrailLine && map) { map.removeLayer(tripTrailLine); tripTrailLine = null; }
     followMode = true;
     statusBar.style.display = 'none';
     if (map && lastKnownPoint) { map.panTo(lastKnownPoint, { animate: true }); }
@@ -487,6 +516,7 @@ function selectTrip(key) {
     const trip = allTrips[key];
     document.getElementById('trip-status-text').textContent = `Viewing Trip ${key + 1} — ${formatTripLabel(trip)}`;
     statusBar.style.display = 'flex';
+    renderTripSummaryCard(trip);
     drawStaticTrip(trip);
   }
 }
@@ -523,6 +553,7 @@ function fetchGpsHistoryRange(startTime, endTime) {
 // the same trip just show the finished route with the car parked at the
 // end (no replay), tracked via trip.animatedOnce.
 let tripAnimFrameId = null;
+let tripTrailLine = null;
 
 function computeCumulativeDistances(points) {
   const dists = [0];
@@ -549,6 +580,7 @@ function pointAtDistance(points, dists, targetDist) {
 
 function animateCarAlongTrip(trip, points) {
   if (tripAnimFrameId) { cancelAnimationFrame(tripAnimFrameId); tripAnimFrameId = null; }
+  if (tripTrailLine) { map.removeLayer(tripTrailLine); tripTrailLine = null; }
   if (!map || !points || points.length < 2) {
     if (points && points.length > 0) {
       liveMarker = L.circleMarker(points[points.length - 1], { radius: 6, color: '#dc3545', fillColor: '#dc3545', fillOpacity: 1 }).addTo(map).bindPopup('End');
@@ -566,6 +598,13 @@ function animateCarAlongTrip(trip, points) {
   if (liveMarker) { map.removeLayer(liveMarker); }
   const animMarker = L.marker(points[0], { icon: getCarIcon(initialHeading) }).addTo(map);
   liveMarker = animMarker;
+  // Blue trail that grows behind the car as it travels, on top of the grey
+  // full-route line, so the driven portion is visibly "filled in" as it goes.
+  tripTrailLine = L.polyline([points[0]], { color: '#2f80ed', weight: 5, opacity: 0.95 }).addTo(map);
+  // circleMarker Start/End dots share the vector overlay pane with the
+  // polylines, so without this the trail (added after) would render on
+  // top of and hide the green Start dot as it grows past it.
+  if (startMarker) startMarker.bringToFront();
   let startTs = null;
   const runToken = ++animateCarAlongTrip._token;
 
@@ -584,10 +623,15 @@ function animateCarAlongTrip(trip, points) {
       const rotEl = el.querySelector('.car-rotate');
       if (rotEl) rotEl.style.transform = `rotate(${heading}deg)`;
     }
+    if (tripTrailLine) {
+      const traveled = points.slice(0, pos.idx + 1).concat([[pos.lat, pos.lng]]);
+      tripTrailLine.setLatLngs(traveled);
+    }
     if (frac < 1) {
       tripAnimFrameId = requestAnimationFrame(step);
     } else {
       tripAnimFrameId = null;
+      if (tripTrailLine) tripTrailLine.setLatLngs(points);
       animMarker.bindPopup('End');
     }
   }
@@ -600,6 +644,7 @@ function renderTripPath(trip, pointsOverride) {
   if (pathLine) map.removeLayer(pathLine);
   if (startMarker) map.removeLayer(startMarker);
   if (liveMarker) map.removeLayer(liveMarker);
+  if (tripTrailLine) { map.removeLayer(tripTrailLine); tripTrailLine = null; }
   animateCarAlongTrip._token++; // invalidate any in-flight animation loop
   if (tripAnimFrameId) { cancelAnimationFrame(tripAnimFrameId); tripAnimFrameId = null; }
   pathLine = L.polyline(points, { color: '#6c757d', weight: 4, opacity: 0.85 }).addTo(map);
@@ -730,9 +775,8 @@ fetch(url)
 .then(fbData => {
 const data = firebaseToFeedsFormat(fbData);
 const container = document.getElementById('feeds-container');
-container.innerHTML = '';
 if (!data.feeds || data.feeds.length === 0) {
-container.innerHTML = "No GPS feeds available.";
+if (viewingTripKey === 'live') { container.innerHTML = "No GPS feeds available."; }
 setStatValue(document.getElementById('vehicle-status'), "Disconnected");
 document.getElementById('vehicle-card').classList.remove('connected');
 document.getElementById('vehicle-card').classList.add('disconnected');
@@ -823,6 +867,8 @@ data.feeds.forEach(f => {
 });
 setStatValue(document.getElementById('top-speed-value'), Math.round(topSpeedTodayKmh).toString());
 setStatValue(document.getElementById('total-distance-value'), totalDistanceKm.toFixed(1));
+if (viewingTripKey === 'live') {
+container.innerHTML = '';
 const cardsToShow = data.feeds.slice(-1);
 for (let i = cardsToShow.length - 1; i >= 0; i--) {
 const feed = cardsToShow[i];
@@ -860,6 +906,7 @@ const card = `
 <div class="coord"><span class="label">Speed:</span> ${speed}</div>
 </div>`;
 container.innerHTML += card;
+}
 }
 initMapIfNeeded();
 if (viewingTripKey === 'live' && tripPoints.length > 0) {
