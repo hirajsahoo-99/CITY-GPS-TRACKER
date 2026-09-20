@@ -34,6 +34,13 @@ h2 { color: #333; padding-bottom: 0; font-size: 20px; margin: 0 0 15px 0; }
 #live-map-frame { width: 100%; height: 100%; touch-action: none; }
 .car-icon-marker { filter: drop-shadow(0 2px 2px rgba(0,0,0,0.4)); }
 .car-icon-marker .car-rotate { width: 30px; height: 30px; transition: transform 0.4s linear; }
+.start-dot-marker { background: transparent; border: none; }
+.start-dot { position: relative; width: 14px; height: 14px; }
+.start-dot::before, .start-dot::after { content: ''; position: absolute; left: 50%; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: rgba(40, 167, 69, 0.5); z-index: 1; pointer-events: none; animation: startRipple 2s ease-out infinite; }
+.start-dot::after { animation-delay: 1s; }
+.start-dot.no-ripple::before, .start-dot.no-ripple::after { display: none; }
+.start-dot-core { position: absolute; left: 50%; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: #28a745; border: 2px solid #ffffff; box-sizing: border-box; box-shadow: 0 0 3px rgba(0,0,0,0.4); z-index: 2; }
+@keyframes startRipple { 0% { transform: scale(0.6); opacity: 0.85; } 100% { transform: scale(3.6); opacity: 0; } }
 .map-box { position: relative; }
 #recenter-btn { position: absolute; top: 10px; right: 10px; z-index: 1000; width: 30px; height: 30px; border: 1px solid #ccc; border-radius: 6px; background: #ffffff; box-shadow: 0 2px 5px rgba(0,0,0,0.2); cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; }
 #recenter-btn:hover { background: #f0f0f0; }
@@ -54,6 +61,20 @@ h2 { color: #333; padding-bottom: 0; font-size: 20px; margin: 0 0 15px 0; }
 .trip-item:hover { background: #f4f7f6; }
 .trip-item.active { background: #e7f3ff; font-weight: 600; color: #007bff; }
 .trip-item-empty { padding: 12px; font-size: 12px; color: #999; text-align: center; }
+.trip-group-title { padding: 6px 12px; font-size: 10px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: #8a94a3; background: #f4f7f6; border-bottom: 1px solid #eee; }
+#main-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 1001; display: none; width: 190px; background: #ffffff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.25); border: 1px solid #ddd; overflow: hidden; }
+.menu-entry { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+.menu-entry svg { width: 24px; height: 24px; flex: 0 0 auto; }
+#menu-fuel-item svg { width: 22px; height: 22px; margin: 0 1px; }
+#settings-panel { position: absolute; top: calc(100% + 6px); left: 0; z-index: 1001; display: none; width: 230px; box-sizing: border-box; background: #ffffff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.25); border: 1px solid #ddd; padding: 12px; }
+.settings-title { font-size: 12px; font-weight: 700; color: #2c3e50; margin-bottom: 10px; }
+.settings-row { margin-bottom: 10px; }
+.settings-row label { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.3px; color: #8a94a3; font-weight: 600; margin-bottom: 3px; }
+.settings-row input { width: 100%; box-sizing: border-box; border: 1px solid #ccc; border-radius: 5px; padding: 6px 8px; font-size: 13px; color: #2c3e50; }
+#settings-save-btn { width: 100%; border: none; background: #007bff; color: #fff; font-size: 12px; font-weight: 600; padding: 7px 10px; border-radius: 5px; cursor: pointer; }
+#settings-save-btn:hover { background: #0062cc; }
+#settings-msg { font-size: 11px; margin-top: 6px; min-height: 14px; color: #dc3545; }
+#settings-msg.ok { color: #28a745; }
 #network-diagram { width: 100%; max-width: 420px; box-sizing: border-box; background: #ffffff; border: 1px solid #ddd; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); padding: 4px 8px; overflow-x: auto; margin-top: 4px; margin-bottom: 15px; }
 @media (max-width: 600px) { #network-diagram { max-width: none; } }
 #network-diagram g[id^="seg-"] { color: #28a745; transition: color 0.3s ease; }
@@ -78,14 +99,45 @@ h2 { color: #333; padding-bottom: 0; font-size: 20px; margin: 0 0 15px 0; }
 </head>
 <body>
 <div id="menu-bar">
-  <button id="menu-btn" title="Trip History">
+  <button id="menu-btn" title="Menu">
     <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
       <path d="M3 6h18M3 12h18M3 18h18" stroke="#333" stroke-width="1.8" stroke-linecap="round"/>
     </svg>
-    <span>TRIP</span>
   </button>
   <h2 id="page-title">City GPS Tracker</h2>
+  <div id="main-menu">
+    <div class="trip-item menu-entry" id="menu-trip-item">
+      <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path fill="#222" fill-rule="evenodd" d="M7.87 29.6C6.2 27.6 1.25 22.5 1.25 17.32a6.62 6.62 0 1 1 13.24 0C14.49 22.5 9.5 27.6 7.87 29.6zM7.87 13.86a3.46 3.46 0 1 0 0 6.92a3.46 3.46 0 1 0 0-6.92z"/>
+        <path fill="#222" fill-rule="evenodd" d="M27.5 11.85C26.7 10.9 23.93 8.6 23.93 5.73a3.38 3.38 0 1 1 6.76 0C30.69 8.6 28.3 10.9 27.5 11.85zM27.31 4.29a1.44 1.44 0 1 0 0 2.88a1.44 1.44 0 1 0 0-2.88z"/>
+        <path d="M8.6 28.8C15 28.5 22 27 25.7 25C28.5 23.4 28 21 25.5 19.8C21 17.8 17 16.6 17.2 14.6C17.4 12.6 21 11.6 27 11.8" stroke="#222" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span>Trip History</span>
+    </div>
+    <div class="trip-item menu-entry" id="menu-fuel-item">
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="4" y="3" width="10" height="18" rx="1.6" stroke="#2c3e50" stroke-width="1.6"/>
+        <rect x="6.5" y="5.6" width="5" height="4.2" rx="0.8" stroke="#2c3e50" stroke-width="1.4"/>
+        <path d="M2.8 21h12.4" stroke="#2c3e50" stroke-width="1.6" stroke-linecap="round"/>
+        <path d="M14 10h2.2a1.6 1.6 0 0 1 1.6 1.6v5a1.5 1.5 0 0 0 3 0V8.6l-2.4-2.4" stroke="#2c3e50" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span>Fuel Settings</span>
+    </div>
+  </div>
   <div id="trip-panel"></div>
+  <div id="settings-panel">
+    <div class="settings-title">Fuel Settings</div>
+    <div class="settings-row">
+      <label for="fuel-price-input">Fuel price (₹ / litre)</label>
+      <input type="number" id="fuel-price-input" min="0" step="0.01" inputmode="decimal">
+    </div>
+    <div class="settings-row">
+      <label for="mileage-input">Mileage (km / litre)</label>
+      <input type="number" id="mileage-input" min="0" step="0.1" inputmode="decimal">
+    </div>
+    <button id="settings-save-btn">Save</button>
+    <div id="settings-msg"></div>
+  </div>
 </div>
 <div id="network-diagram" title="How a GPS fix reaches your phone">
     <svg viewBox="0 0 422 46" xmlns="http://www.w3.org/2000/svg">
@@ -163,7 +215,7 @@ h2 { color: #333; padding-bottom: 0; font-size: 20px; margin: 0 0 15px 0; }
   </div>
   <div class="stat-card">
     <div class="stat-label">Total Distance</div>
-    <div class="stat-value"><span id="total-distance-value">0.0</span><span class="stat-unit">km</span></div>
+    <div class="stat-value"><span id="total-distance-value">0.0</span><span class="stat-unit">km</span><span class="stat-unit" id="total-distance-cost">(₹0.00)</span></div>
   </div>
 </div>
 <div id="feeds-container" class="feeds-grid">Loading coordinates...</div>
@@ -202,6 +254,37 @@ const tripsUrl = `https://${FIREBASE_HOST}${TRIPS_PATH}`;
 const DEVICE_STATUS_PATH = "/device_status.json";
 const deviceStatusUrl = `https://${FIREBASE_HOST}${DEVICE_STATUS_PATH}?orderBy=%22$key%22&limitToLast=1`;
 const HEARTBEAT_STALE_MS = 45000;
+
+// Fuel cost settings -- defaults below; the settings (gear) button in the
+// top bar lets you change them and saves them in this browser.
+const FUEL_STORAGE_KEY = 'gpsFuelSettings';
+let FUEL_PRICE_PER_LITRE = 110;   // ₹ per litre
+let MILEAGE_KM_PER_LITRE = 50;    // km per litre
+
+(function loadFuelSettings() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(FUEL_STORAGE_KEY));
+    if (saved && saved.price > 0 && saved.mileage > 0) {
+      FUEL_PRICE_PER_LITRE = saved.price;
+      MILEAGE_KM_PER_LITRE = saved.mileage;
+    }
+  } catch (e) { /* storage unavailable or empty -- keep defaults */ }
+})();
+
+function saveFuelSettings(price, mileage) {
+  FUEL_PRICE_PER_LITRE = price;
+  MILEAGE_KM_PER_LITRE = mileage;
+  try {
+    localStorage.setItem(FUEL_STORAGE_KEY, JSON.stringify({ price: price, mileage: mileage }));
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function tripFuelCost(km) {
+  return (km / MILEAGE_KM_PER_LITRE) * FUEL_PRICE_PER_LITRE;
+}
 
 // The firmware currently pushes trip SUMMARIES to /trip_history (avgSpeedKmh,
 // distanceM, durationMs, startLat/startLng, endLat/endLng, maxSpeedKmh, ts) --
@@ -350,9 +433,20 @@ function localDateKey(d) {
   return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
 }
 
+// Shows "Today" / "Yesterday" for recent dates, otherwise the normal
+// date (e.g. 9/20/2026).
+function formatDateLabel(d) {
+  const now = new Date();
+  if (localDateKey(d) === localDateKey(now)) return 'Today';
+  const yest = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+  if (localDateKey(d) === localDateKey(yest)) return 'Yesterday';
+  return d.toLocaleDateString();
+}
+
 let map = null;
 let pathLine = null;
 let startMarker = null;
+let startMarkerKey = null;
 let liveMarker = null;
 let fixedTripStartPoint = null;
 let fixedTripStartTime = null;
@@ -396,6 +490,7 @@ let lastPathBounds = null;
 let tileErrorShown = false;
 let followMode = true;
 let lastKnownPoint = null;
+let lastTotalDistanceKm = 0;
 
 document.getElementById('recenter-btn').addEventListener('click', function() {
   if (viewingTripKey !== 'live') { selectTrip('live'); return; }
@@ -410,12 +505,55 @@ document.getElementById('style-toggle-btn').addEventListener('click', function()
   this.classList.toggle('hybrid-active', nextStyleId === 'hybrid');
 });
 
+const mainMenu = document.getElementById('main-menu');
+function closeAllMenus() {
+  mainMenu.style.display = 'none';
+  document.getElementById('trip-panel').style.display = 'none';
+  document.getElementById('settings-panel').style.display = 'none';
+}
 document.getElementById('menu-btn').addEventListener('click', function(e) {
   e.stopPropagation();
-  const panel = document.getElementById('trip-panel');
-  const willShow = panel.style.display !== 'block';
-  if (willShow) renderTripMenu();
-  panel.style.display = willShow ? 'block' : 'none';
+  const willShow = mainMenu.style.display !== 'block';
+  closeAllMenus();
+  if (willShow) mainMenu.style.display = 'block';
+});
+document.getElementById('menu-trip-item').addEventListener('click', function(e) {
+  e.stopPropagation();
+  closeAllMenus();
+  renderTripMenu();
+  document.getElementById('trip-panel').style.display = 'block';
+});
+document.getElementById('menu-fuel-item').addEventListener('click', function(e) {
+  e.stopPropagation();
+  closeAllMenus();
+  document.getElementById('fuel-price-input').value = FUEL_PRICE_PER_LITRE;
+  document.getElementById('mileage-input').value = MILEAGE_KM_PER_LITRE;
+  document.getElementById('settings-msg').textContent = '';
+  document.getElementById('settings-panel').style.display = 'block';
+});
+document.addEventListener('click', function(e) {
+  if (mainMenu.style.display === 'block' && !mainMenu.contains(e.target)) mainMenu.style.display = 'none';
+});
+document.getElementById('settings-save-btn').addEventListener('click', function() {
+  const price = parseFloat(document.getElementById('fuel-price-input').value);
+  const mileage = parseFloat(document.getElementById('mileage-input').value);
+  const msg = document.getElementById('settings-msg');
+  if (!(price > 0) || !(mileage > 0)) {
+    msg.className = '';
+    msg.textContent = 'Sahi price aur mileage daalein';
+    return;
+  }
+  const saved = saveFuelSettings(price, mileage);
+  msg.className = 'ok';
+  msg.textContent = saved ? 'Saved ✓' : 'Applied (is browser me save nahi ho paya)';
+  // Refresh everything that shows a rupee amount right away.
+  setStatValue(document.getElementById('total-distance-cost'), '(₹' + tripFuelCost(lastTotalDistanceKm).toFixed(2) + ')');
+  if (viewingTripKey !== 'live' && allTrips[viewingTripKey]) renderTripSummaryCard(allTrips[viewingTripKey]);
+});
+document.getElementById('settings-panel').addEventListener('click', function(e) { e.stopPropagation(); });
+document.addEventListener('click', function(e) {
+  const sPanel = document.getElementById('settings-panel');
+  if (sPanel.style.display === 'block' && !sPanel.contains(e.target)) sPanel.style.display = 'none';
 });
 document.addEventListener('click', function(e) {
   const panel = document.getElementById('trip-panel');
@@ -448,18 +586,34 @@ function tripDistanceKm(trip) {
   return d;
 }
 
-function formatTripLabel(trip) {
+function formatTripLabel(trip, hideDate) {
   const start = new Date(trip.startTime);
   const end = new Date(trip.endTime);
-  return `${start.toLocaleDateString()} · ${formatClock(start)} – ${formatClock(end)} · ${tripDistanceKm(trip).toFixed(1)} km`;
+  const datePart = hideDate ? '' : `${formatDateLabel(start)} · `;
+  return `${datePart}${formatClock(start)} – ${formatClock(end)} · ${tripDistanceKm(trip).toFixed(1)} km`;
+}
+
+// Which heading a trip sits under in the Trip menu.
+function tripDateGroup(trip) {
+  const label = formatDateLabel(new Date(trip.startTime));
+  return (label === 'Today' || label === 'Yesterday') ? label : 'Earlier';
 }
 
 function renderTripMenu() {
   const panel = document.getElementById('trip-panel');
-  let html = `<div class="trip-item ${viewingTripKey === 'live' ? 'active' : ''}" data-trip="live">🔴 Live Tracking</div>`;
+  let html = '';
+  const groups = { 'Today': [], 'Yesterday': [], 'Earlier': [] };
   for (let i = allTrips.length - 1; i >= 0; i--) {
-    html += `<div class="trip-item ${viewingTripKey === i ? 'active' : ''}" data-trip="${i}">Trip ${i + 1} — ${formatTripLabel(allTrips[i])}</div>`;
+    groups[tripDateGroup(allTrips[i])].push(i);
   }
+  ['Today', 'Yesterday', 'Earlier'].forEach(function(name) {
+    if (groups[name].length === 0) return;
+    html += `<div class="trip-group-title">${name}</div>`;
+    groups[name].forEach(function(i) {
+      const hideDate = (name !== 'Earlier');
+      html += `<div class="trip-item ${viewingTripKey === i ? 'active' : ''}" data-trip="${i}">Trip ${i + 1} — ${formatTripLabel(allTrips[i], hideDate)}</div>`;
+    });
+  });
   if (allTrips.length === 0) {
     html += `<div class="trip-item-empty">No past trips detected yet</div>`;
   }
@@ -482,20 +636,20 @@ function formatDurationMs(ms) {
 }
 
 // Replaces the feeds-container's "latest ping" card with a trip summary
-// card (time range, total time, total km, top speed) while a saved trip
-// is being viewed, instead of showing the live latest-fix card.
+// card (time range, total time, total km + fuel cost, top speed) while a
+// saved trip is being viewed, instead of showing the live latest-fix card.
 function renderTripSummaryCard(trip) {
   const container = document.getElementById('feeds-container');
   const start = new Date(trip.startTime);
   const end = new Date(trip.endTime);
-  const dateString = start.toLocaleDateString();
+  const dateString = formatDateLabel(start);
   const durationText = formatDurationMs(trip.endTime - trip.startTime);
   const distKm = tripDistanceKm(trip);
   const topSpeed = (typeof trip.maxSpeedKmh === 'number') ? Math.round(trip.maxSpeedKmh) : 0;
   container.innerHTML = `
 <div class="feed-card latest">
 <div class="time">🕒 ${dateString}, ${formatClock(start)} – ${formatClock(end)} (${durationText})</div>
-<div class="coord"><span class="label">Total KM:</span> ${distKm.toFixed(1)} km</div>
+<div class="coord"><span class="label">Total KM:</span> ${distKm.toFixed(1)} km (₹${tripFuelCost(distKm).toFixed(2)})</div>
 <div class="coord"><span class="label">Top Speed:</span> ${topSpeed} km/h</div>
 </div>`;
 }
@@ -601,10 +755,7 @@ function animateCarAlongTrip(trip, points) {
   // Blue trail that grows behind the car as it travels, on top of the grey
   // full-route line, so the driven portion is visibly "filled in" as it goes.
   tripTrailLine = L.polyline([points[0]], { color: '#2f80ed', weight: 5, opacity: 0.95 }).addTo(map);
-  // circleMarker Start/End dots share the vector overlay pane with the
-  // polylines, so without this the trail (added after) would render on
-  // top of and hide the green Start dot as it grows past it.
-  if (startMarker) startMarker.bringToFront();
+  // The Start marker is a DOM marker, so it always sits above the trail line.
   let startTs = null;
   const runToken = ++animateCarAlongTrip._token;
 
@@ -648,7 +799,8 @@ function renderTripPath(trip, pointsOverride) {
   animateCarAlongTrip._token++; // invalidate any in-flight animation loop
   if (tripAnimFrameId) { cancelAnimationFrame(tripAnimFrameId); tripAnimFrameId = null; }
   pathLine = L.polyline(points, { color: '#6c757d', weight: 4, opacity: 0.85 }).addTo(map);
-  startMarker = L.circleMarker(points[0], { radius: 6, color: '#28a745', fillColor: '#28a745', fillOpacity: 1 }).addTo(map).bindPopup('Start');
+  startMarker = makeStartMarker(points[0], true);
+  startMarkerKey = 'trip';
   map.fitBounds(pathLine.getBounds(), { padding: [30, 30] });
   // Play the start->end animation every time this trip is opened (not just
   // the first time), so re-selecting a trip from the menu always replays it.
@@ -714,6 +866,21 @@ function computeBearing(latA, lonA, latB, lonB) {
 
 let lastHeading = 0;
 
+// Green "Start" dot with a ripple animation. It's a DOM marker (not a
+// vector circle) so CSS animation works and it sits above the route lines.
+function makeStartMarker(latlng, withRipple) {
+  return L.marker(latlng, {
+    icon: L.divIcon({
+      className: 'start-dot-marker',
+      html: '<div class="start-dot' + (withRipple ? '' : ' no-ripple') + '"><div class="start-dot-core"></div></div>',
+      iconSize: [14, 14],
+      iconAnchor: [7, 7],
+      popupAnchor: [0, -8]
+    }),
+    zIndexOffset: -100
+  }).addTo(map).bindPopup('Start');
+}
+
 function getOrCreateTileLayer(styleId) {
   if (tileLayerCache[styleId]) return tileLayerCache[styleId];
   const style = MAP_STYLES.find(s => s.id === styleId);
@@ -769,7 +936,10 @@ function firebaseToFeedsFormat(fbData) {
   return { channel: { name: "City GPS Tracker" }, feeds };
 }
 
+let isFetchingData = false;
 function fetchAndRenderData() {
+if (isFetchingData) return;
+isFetchingData = true;
 fetch(url)
 .then(response => response.json())
 .then(fbData => {
@@ -867,13 +1037,15 @@ data.feeds.forEach(f => {
 });
 setStatValue(document.getElementById('top-speed-value'), Math.round(topSpeedTodayKmh).toString());
 setStatValue(document.getElementById('total-distance-value'), totalDistanceKm.toFixed(1));
+lastTotalDistanceKm = totalDistanceKm;
+setStatValue(document.getElementById('total-distance-cost'), '(₹' + tripFuelCost(totalDistanceKm).toFixed(2) + ')');
 if (viewingTripKey === 'live') {
 container.innerHTML = '';
 const cardsToShow = data.feeds.slice(-1);
 for (let i = cardsToShow.length - 1; i >= 0; i--) {
 const feed = cardsToShow[i];
 const dateObj = new Date(feed.created_at);
-const dateString = dateObj.toLocaleDateString();
+const dateString = formatDateLabel(dateObj);
 let hours = dateObj.getHours();
 const minutes = dateObj.getMinutes().toString().padStart(2, '0');
 const ampm = hours >= 12 ? 'PM' : 'AM';
@@ -912,8 +1084,13 @@ initMapIfNeeded();
 if (viewingTripKey === 'live' && tripPoints.length > 0) {
  if (pathLine) { map.removeLayer(pathLine); }
  pathLine = L.polyline(tripPoints, { color: '#007bff', weight: 4, opacity: 0.8 }).addTo(map);
- if (startMarker) { map.removeLayer(startMarker); }
- startMarker = L.circleMarker(fixedTripStartPoint || tripPoints[0], { radius: 6, color: '#28a745', fillColor: '#28a745', fillOpacity: 1 }).addTo(map).bindPopup("Start");
+ const startPt = fixedTripStartPoint || tripPoints[0];
+ const startKey = 'live:' + startPt[0] + ',' + startPt[1];
+ if (startKey !== startMarkerKey || !startMarker || !map.hasLayer(startMarker)) {
+   if (startMarker) { map.removeLayer(startMarker); }
+   startMarker = makeStartMarker(startPt, false);
+   startMarkerKey = startKey;
+ }
  const lastPoint = tripPoints[tripPoints.length - 1];
  if (tripPoints.length >= 2) {
    const prevPoint = tripPoints[tripPoints.length - 2];
@@ -953,14 +1130,37 @@ setStatValue(document.getElementById('vehicle-status'), "Disconnected");
 vehicleCard.classList.remove('connected');
 vehicleCard.classList.add('disconnected');
 updateDiagramFromStatus({ firebaseReachable: false });
-});
+}).finally(function() { isFetchingData = false; });
 }
 updateDiagramFromStatus({ browserOnline: navigator.onLine });
 loadTripsFromFirebase();
 fetchAndRenderData();
 fetchDeviceStatus();
-setInterval(fetchAndRenderData, 2000);
-setInterval(fetchDeviceStatus, 2000);
+
+// Poll only while the tab is visible -- when the page is in the background
+// (or the phone screen is off) there's no need to keep downloading data.
+let pollTimers = [];
+function startPolling() {
+  if (pollTimers.length) return;
+  pollTimers = [
+    setInterval(fetchAndRenderData, 2000),
+    setInterval(fetchDeviceStatus, 2000)
+  ];
+}
+function stopPolling() {
+  pollTimers.forEach(clearInterval);
+  pollTimers = [];
+}
+document.addEventListener('visibilitychange', function() {
+  if (document.hidden) {
+    stopPolling();
+  } else {
+    fetchAndRenderData();
+    fetchDeviceStatus();
+    startPolling();
+  }
+});
+if (!document.hidden) startPolling();
 </script>
 </body>
 </html>
