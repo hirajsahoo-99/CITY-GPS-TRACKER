@@ -4,400 +4,76 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GPS Tracker App</title>
-<!-- Leaflet CSS/JS (free, no API key needed) -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
-body {
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  margin: 15px;
-  background-color: #f4f7f6;
-}
-h2 {
-  color: #333;
-  padding-bottom: 0;
-  font-size: 20px;
-  margin: 0 0 15px 0;
-}
-/* PROFESSIONAL STATS BAR -- cards are permanent DOM nodes; only their .stat-value
-   text/class ever changes on refresh, so the boxes themselves never re-render
-   or flicker, and value changes fade in smoothly via .value-flash. */
-.stats-bar {
-  display: flex;
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  gap: 8px;
-  margin-bottom: 15px;
-  padding-bottom: 2px;
-}
-.stat-card {
-  background: #ffffff;
-  border-radius: 5px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-  border-left: 3px solid #007bff;
-  padding: 4px 10px;
-  min-width: 0;
-  flex: 0 0 auto;
-  white-space: nowrap;
-  box-sizing: border-box;
-  transition: border-color 0.3s ease;
-}
-.stat-label {
-  font-size: 9px;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-  color: #8a94a3;
-  font-weight: 600;
-  margin-bottom: 1px;
-}
-.stat-value {
-  font-size: 13px;
-  font-weight: 700;
-  color: #2c3e50;
-  transition: color 0.3s ease;
-}
-.stat-unit {
-  font-size: 10px;
-  font-weight: 500;
-  color: #8a94a3;
-  margin-left: 2px;
-}
+body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 15px; background-color: #f4f7f6; }
+h2 { color: #333; padding-bottom: 0; font-size: 20px; margin: 0 0 15px 0; }
+.stats-bar { display: flex; flex-wrap: nowrap; overflow-x: auto; gap: 8px; margin-bottom: 15px; padding-bottom: 2px; }
+.stat-card { background: #ffffff; border-radius: 5px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); border-left: 3px solid #007bff; padding: 4px 10px; min-width: 0; flex: 0 0 auto; white-space: nowrap; box-sizing: border-box; transition: border-color 0.3s ease; }
+.stat-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.3px; color: #8a94a3; font-weight: 600; margin-bottom: 1px; }
+.stat-value { font-size: 13px; font-weight: 700; color: #2c3e50; transition: color 0.3s ease; }
+.stat-unit { font-size: 10px; font-weight: 500; color: #8a94a3; margin-left: 2px; }
 .stat-value.value-flash { animation: valueFlash 0.5s ease; }
-@keyframes valueFlash {
-  0% { opacity: 0.35; }
-  100% { opacity: 1; }
-}
-/* State colors -- toggled on the card itself, never on innerHTML, so no rebuild */
+@keyframes valueFlash { 0% { opacity: 0.35; } 100% { opacity: 1; } }
 #vehicle-card.connected { border-left-color: #28a745; }
 #vehicle-card.connected .stat-value { color: #28a745; }
 #vehicle-card.disconnected { border-left-color: #dc3545; }
 #vehicle-card.disconnected .stat-value { color: #dc3545; }
-.feeds-grid {
-  display: flex;
-  gap: 15px;
-  flex-direction: column;
-  margin-top: 10px;
-}
-.feed-card {
-  background: #ffffff;
-  padding: 15px;
-  border-radius: 8px;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-  border-top: 5px solid #007bff;
-  box-sizing: border-box;
-  width: 100%;
-}
-.feed-card.latest {
-  border-top-color: #28a745;
-  background-color: #f8fff9;
-}
-.time {
-  font-size: 11px;
-  color: #777;
-  margin-bottom: 10px;
-}
-.coord {
-  font-size: 16px;
-  font-weight: bold;
-  margin: 8px 0;
-  color: #2c3e50;
-}
-.label {
-  color: #007bff;
-  font-weight: normal;
-}
-/* HISTORY VIEW STATUS BAR (shown above the map when viewing a past trip
-   instead of the live feed) */
-#trip-status-bar {
-  display: none;
-  align-items: center;
-  justify-content: space-between;
-  background: #eaf3ff;
-  border: 1px solid #b8d9ff;
-  color: #1c5faa;
-  font-size: 12px;
-  padding: 7px 10px;
-  border-radius: 6px;
-  margin-top: 10px;
-  gap: 8px;
-}
-#trip-status-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-#go-live-btn {
-  flex: 0 0 auto;
-  border: none;
-  background: #007bff;
-  color: #fff;
-  font-size: 11px;
-  font-weight: 600;
-  padding: 5px 10px;
-  border-radius: 4px;
-  cursor: pointer;
-}
+.feeds-grid { display: flex; gap: 15px; flex-direction: column; margin-top: 10px; }
+.feed-card { background: #ffffff; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border-top: 5px solid #007bff; box-sizing: border-box; width: 100%; }
+.feed-card.latest { border-top-color: #28a745; background-color: #f8fff9; }
+.time { font-size: 11px; color: #777; margin-bottom: 10px; }
+.coord { font-size: 16px; font-weight: bold; margin: 8px 0; color: #2c3e50; }
+.label { color: #007bff; font-weight: normal; }
+#trip-status-bar { display: none; align-items: center; justify-content: space-between; background: #eaf3ff; border: 1px solid #b8d9ff; color: #1c5faa; font-size: 12px; padding: 7px 10px; border-radius: 6px; margin-top: 10px; gap: 8px; }
+#trip-status-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#go-live-btn { flex: 0 0 auto; border: none; background: #007bff; color: #fff; font-size: 11px; font-weight: 600; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
 #go-live-btn:hover { background: #0062cc; }
-/* LIVE MAP CONTAINER LAYOUT */
-.map-box {
-  width: 100%;
-  height: 350px;
-  margin-top: 20px;
-  border-radius: 8px;
-  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-  overflow: hidden;
-  border: 1px solid #ccc;
-  background-color: #e5e3df;
-  overscroll-behavior: contain; /* stop a map drag from chaining into a page scroll */
-}
-#live-map-frame {
-  width: 100%;
-  height: 100%;
-  touch-action: none; /* let Leaflet's JS fully own drag/pan; browser won't hijack it as page scroll */
-}
-/* CAR ICON MARKER (top-view car, replaces default Leaflet pin, rotates with heading) */
-.car-icon-marker {
-  filter: drop-shadow(0 2px 2px rgba(0,0,0,0.4));
-}
-.car-icon-marker .car-rotate {
-  width: 30px;
-  height: 30px;
-  transition: transform 0.4s linear; /* smooth turn when heading changes */
-}
-
-/* SMALL RE-CENTER BUTTON (positioned over the map, top-right) */
+.map-box { width: 100%; height: 350px; margin-top: 20px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); overflow: hidden; border: 1px solid #ccc; background-color: #e5e3df; overscroll-behavior: contain; }
+#live-map-frame { width: 100%; height: 100%; touch-action: none; }
+.car-icon-marker { filter: drop-shadow(0 2px 2px rgba(0,0,0,0.4)); }
+.car-icon-marker .car-rotate { width: 30px; height: 30px; transition: transform 0.4s linear; }
 .map-box { position: relative; }
-#recenter-btn {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  z-index: 1000;
-  width: 30px;
-  height: 30px;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  background: #ffffff;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-}
+#recenter-btn { position: absolute; top: 10px; right: 10px; z-index: 1000; width: 30px; height: 30px; border: 1px solid #ccc; border-radius: 6px; background: #ffffff; box-shadow: 0 2px 5px rgba(0,0,0,0.2); cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; }
 #recenter-btn:hover { background: #f0f0f0; }
 #recenter-btn svg { width: 18px; height: 18px; }
-
-/* HYBRID / STREET MAP STYLE TOGGLE (sits directly below recenter button) */
-#style-toggle-btn {
-  position: absolute;
-  top: 48px;
-  right: 10px;
-  z-index: 1000;
-  width: 30px;
-  height: 30px;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  background: #ffffff;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-}
+#style-toggle-btn { position: absolute; top: 48px; right: 10px; z-index: 1000; width: 30px; height: 30px; border: 1px solid #ccc; border-radius: 6px; background: #ffffff; box-shadow: 0 2px 5px rgba(0,0,0,0.2); cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; }
 #style-toggle-btn:hover { background: #f0f0f0; }
 #style-toggle-btn svg { width: 18px; height: 18px; }
-#style-toggle-btn.hybrid-active {
-  background: #2c3e50;
-  border-color: #2c3e50;
-}
-#style-toggle-btn.hybrid-active svg polygon,
-#style-toggle-btn.hybrid-active svg path {
-  stroke: #ffffff;
-}
-
-/* MENU BAR (top-left: hamburger Trip button, then the page title, in one row). */
-#menu-bar {
-  position: relative;
-  margin-bottom: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 10px;
-  flex-wrap: nowrap;
-}
-#menu-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex: 0 0 auto;
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  background: #ffffff;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-  cursor: pointer;
-  padding: 6px 10px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #2c3e50;
-  white-space: nowrap;
-}
+#style-toggle-btn.hybrid-active { background: #2c3e50; border-color: #2c3e50; }
+#style-toggle-btn.hybrid-active svg polygon, #style-toggle-btn.hybrid-active svg path { stroke: #ffffff; }
+#menu-bar { position: relative; margin-bottom: 10px; display: flex; align-items: center; justify-content: flex-start; gap: 10px; flex-wrap: nowrap; }
+#menu-btn { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; border: 1px solid #ccc; border-radius: 6px; background: #ffffff; box-shadow: 0 1px 3px rgba(0,0,0,0.08); cursor: pointer; padding: 6px 10px; font-size: 12px; font-weight: 600; color: #2c3e50; white-space: nowrap; }
 #menu-btn:hover { background: #f0f0f0; }
 #menu-btn svg { width: 16px; height: 16px; flex: 0 0 auto; }
-
-/* Page title, sitting immediately to the right of the Trip button */
-#page-title {
-  margin: 0;
-  font-size: 20px;
-  color: #333;
-  white-space: nowrap;
-  flex: 0 0 auto;
-}
-
-/* TRIP HISTORY DROPDOWN PANEL (appears directly under the hamburger button) */
-#trip-panel {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  z-index: 1001;
-  display: none;
-  width: 260px;
-  max-height: 280px;
-  overflow-y: auto;
-  background: #ffffff;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
-  border: 1px solid #ddd;
-}
-.trip-item {
-  padding: 9px 12px;
-  font-size: 12px;
-  color: #2c3e50;
-  border-bottom: 1px solid #eee;
-  cursor: pointer;
-  line-height: 1.4;
-}
+#page-title { margin: 0; font-size: 20px; color: #333; white-space: nowrap; flex: 0 0 auto; }
+#trip-panel { position: absolute; top: calc(100% + 6px); left: 0; z-index: 1001; display: none; width: 260px; max-height: 280px; overflow-y: auto; background: #ffffff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.25); border: 1px solid #ddd; }
+.trip-item { padding: 9px 12px; font-size: 12px; color: #2c3e50; border-bottom: 1px solid #eee; cursor: pointer; line-height: 1.4; }
 .trip-item:last-child { border-bottom: none; }
 .trip-item:hover { background: #f4f7f6; }
 .trip-item.active { background: #e7f3ff; font-weight: 600; color: #007bff; }
-.trip-item-empty {
-  padding: 12px;
-  font-size: 12px;
-  color: #999;
-  text-align: center;
-}
-
-/* NETWORK FLOW DIAGRAM (Module -> Internet -> Server -> Internet -> Mobile).
-   Now placed BELOW the Trip/title bar as its own full-width row -- small,
-   permanent, self-contained strip that illustrates how a live GPS fix
-   reaches the phone. */
-#network-diagram {
-  width: 100%;
-  max-width: 420px;
-  box-sizing: border-box;
-  background: #ffffff;
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-  padding: 4px 8px;
-  overflow-x: auto;
-  margin-top: 4px;
-  margin-bottom: 15px;
-}
-@media (max-width: 600px) {
-  #network-diagram { max-width: none; }
-}
-/* Each connection group defaults to a glowing green line (up). JS adds
-   .seg-offline the moment that hop is known to be down -- the line turns
-   plain grey and a red X badge appears on top of it. */
-#network-diagram g[id^="seg-"] {
-  color: #28a745;
-  transition: color 0.3s ease;
-}
-#network-diagram g[id^="seg-"] line {
-  opacity: 0.8; /* green line shown at 70% opacity */
-}
-#network-diagram g[id^="seg-"].seg-offline line {
-  opacity: 1; /* grey offline state stays fully opaque */
-}
-#network-diagram g[id^="seg-"] line {
-  filter: drop-shadow(0 0 2.5px currentColor) drop-shadow(0 0 2.5px currentColor);
-  transition: filter 0.3s ease;
-  animation: segGlowPulse 1.8s ease-in-out infinite;
-}
-@keyframes segGlowPulse {
-  0%, 100% { filter: drop-shadow(0 0 1.5px currentColor) drop-shadow(0 0 1.5px currentColor); }
-  50% { filter: drop-shadow(0 0 3.5px currentColor) drop-shadow(0 0 3.5px currentColor); }
-}
-#network-diagram g[id^="seg-"].seg-offline {
-  color: #adb5bd;
-}
-#network-diagram g[id^="seg-"].seg-offline line {
-  filter: none;
-  animation: none;
-}
-#network-diagram g[id^="seg-"] .seg-pulse {
-  fill: currentColor;
-  filter: drop-shadow(0 0 2px currentColor);
-  animation: segPulseMove 1.6s linear infinite;
-}
-@keyframes segPulseMove {
-  0%   { transform: translateX(0); opacity: 0; }
-  12%  { opacity: 1; }
-  88%  { opacity: 1; }
-  100% { transform: translateX(78px); opacity: 0; }
-}
-#network-diagram g[id^="seg-"].seg-offline .seg-pulse {
-  display: none; /* no traveling dot on a down connection */
-}
-#network-diagram g[id^="seg-"] .seg-x {
-  opacity: 0;
-  transition: opacity 0.3s ease;
-}
-#network-diagram g[id^="seg-"].seg-offline .seg-x {
-  opacity: 1;
-}
-/* Module node is split in half: top = GPS fix status, bottom = Module/network
-   status (netOk). Same green-default / red-on-.half-offline pattern. */
-#network-diagram #module-gps-half,
-#network-diagram #module-net-half {
-  color: #28a745;
-  transition: color 0.3s ease;
-}
-#network-diagram #module-gps-half.half-offline,
-#network-diagram #module-net-half.half-offline {
-  color: #dc3545;
-}
-/* GPS half blinks red only when: network is OK but no fix yet. When the
-   network itself is down, or once a fix lands, this class is removed so the
-   half stays constant (red or green respectively). */
-@keyframes gpsHalfBlink {
-  0%, 49% { opacity: 1; }
-  50%, 100% { opacity: 0; }
-}
-#network-diagram #module-gps-half.gps-blink {
-  animation: gpsHalfBlink 1s steps(1, end) infinite;
-}
-#network-diagram svg {
-  display: block;
-  width: 100%;
-  height: 46px;
-}
-
-/* TILE LOAD WARNING BANNER (shown over map if MapTiler tiles fail, e.g. domain-restricted key) */
-#tile-warning {
-  position: absolute;
-  bottom: 8px;
-  left: 8px;
-  right: 8px;
-  z-index: 1000;
-  background: rgba(220, 53, 69, 0.92);
-  color: #fff;
-  font-size: 11px;
-  padding: 6px 8px;
-  border-radius: 6px;
-  display: none;
-}
+.trip-item-empty { padding: 12px; font-size: 12px; color: #999; text-align: center; }
+#network-diagram { width: 100%; max-width: 420px; box-sizing: border-box; background: #ffffff; border: 1px solid #ddd; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); padding: 4px 8px; overflow-x: auto; margin-top: 4px; margin-bottom: 15px; }
+@media (max-width: 600px) { #network-diagram { max-width: none; } }
+#network-diagram g[id^="seg-"] { color: #28a745; transition: color 0.3s ease; }
+#network-diagram g[id^="seg-"] line { opacity: 0.8; }
+#network-diagram g[id^="seg-"].seg-offline line { opacity: 1; }
+#network-diagram g[id^="seg-"] line { filter: drop-shadow(0 0 2.5px currentColor) drop-shadow(0 0 2.5px currentColor); transition: filter 0.3s ease; animation: segGlowPulse 1.8s ease-in-out infinite; }
+@keyframes segGlowPulse { 0%, 100% { filter: drop-shadow(0 0 1.5px currentColor) drop-shadow(0 0 1.5px currentColor); } 50% { filter: drop-shadow(0 0 3.5px currentColor) drop-shadow(0 0 3.5px currentColor); } }
+#network-diagram g[id^="seg-"].seg-offline { color: #adb5bd; }
+#network-diagram g[id^="seg-"].seg-offline line { filter: none; animation: none; }
+#network-diagram g[id^="seg-"] .seg-pulse { fill: currentColor; filter: drop-shadow(0 0 2px currentColor); animation: segPulseMove 1.6s linear infinite; }
+@keyframes segPulseMove { 0% { transform: translateX(0); opacity: 0; } 12% { opacity: 1; } 88% { opacity: 1; } 100% { transform: translateX(78px); opacity: 0; } }
+#network-diagram g[id^="seg-"].seg-offline .seg-pulse { display: none; }
+#network-diagram g[id^="seg-"] .seg-x { opacity: 0; transition: opacity 0.3s ease; }
+#network-diagram g[id^="seg-"].seg-offline .seg-x { opacity: 1; }
+#network-diagram #module-gps-half, #network-diagram #module-net-half { color: #28a745; transition: color 0.3s ease; }
+#network-diagram #module-gps-half.half-offline, #network-diagram #module-net-half.half-offline { color: #dc3545; }
+@keyframes gpsHalfBlink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+#network-diagram #module-gps-half.gps-blink { animation: gpsHalfBlink 1s steps(1, end) infinite; }
+#network-diagram svg { display: block; width: 100%; height: 46px; }
+#tile-warning { position: absolute; bottom: 8px; left: 8px; right: 8px; z-index: 1000; background: rgba(220, 53, 69, 0.92); color: #fff; font-size: 11px; padding: 6px 8px; border-radius: 6px; display: none; }
 </style>
 </head>
 <body>
@@ -411,76 +87,39 @@ h2 {
   <h2 id="page-title">City GPS Tracker</h2>
   <div id="trip-panel"></div>
 </div>
-<!-- Network flow diagram: [GPS/Module] -> Internet -> Server -> Internet -> Mobile.
-     Moved below the Trip/title bar as its own full-width row. The first node is
-     split in half: top = GPS fix status (label "GPS"), bottom = Module's own
-     network/internet status (netOk, power-button icon). -->
 <div id="network-diagram" title="How a GPS fix reaches your phone">
-
     <svg viewBox="0 0 422 46" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <clipPath id="moduleClip"><rect x="2" y="8" width="36" height="30" rx="6"/></clipPath>
-      </defs>
-      <!-- Each connection is its own group (a line, plus a red X badge shown
-           only when offline) so it can reflect that hop's status independently. -->
+      <defs><clipPath id="moduleClip"><rect x="2" y="8" width="36" height="30" rx="6"/></clipPath></defs>
       <g id="seg-module-internet">
         <line x1="34" y1="23" x2="112" y2="23" stroke="currentColor" stroke-width="0.6"/>
         <circle class="seg-pulse" cx="34" cy="23" r="0.8"/>
-        <g class="seg-x">
-          <circle cx="73" cy="23" r="6" fill="#ffffff"/>
-          <line x1="69.8" y1="19.8" x2="76.2" y2="26.2" stroke="#dc3545" stroke-width="1.8" stroke-linecap="round"/>
-          <line x1="69.8" y1="26.2" x2="76.2" y2="19.8" stroke="#dc3545" stroke-width="1.8" stroke-linecap="round"/>
-        </g>
+        <g class="seg-x"><circle cx="73" cy="23" r="6" fill="#ffffff"/><line x1="69.8" y1="19.8" x2="76.2" y2="26.2" stroke="#dc3545" stroke-width="1.8" stroke-linecap="round"/><line x1="69.8" y1="26.2" x2="76.2" y2="19.8" stroke="#dc3545" stroke-width="1.8" stroke-linecap="round"/></g>
       </g>
       <g id="seg-internet-server">
         <line x1="126" y1="23" x2="204" y2="23" stroke="currentColor" stroke-width="0.6"/>
         <circle class="seg-pulse" cx="126" cy="23" r="0.8"/>
-        <g class="seg-x">
-          <circle cx="165" cy="23" r="6" fill="#ffffff"/>
-          <line x1="161.8" y1="19.8" x2="168.2" y2="26.2" stroke="#dc3545" stroke-width="1.8" stroke-linecap="round"/>
-          <line x1="161.8" y1="26.2" x2="168.2" y2="19.8" stroke="#dc3545" stroke-width="1.8" stroke-linecap="round"/>
-        </g>
+        <g class="seg-x"><circle cx="165" cy="23" r="6" fill="#ffffff"/><line x1="161.8" y1="19.8" x2="168.2" y2="26.2" stroke="#dc3545" stroke-width="1.8" stroke-linecap="round"/><line x1="161.8" y1="26.2" x2="168.2" y2="19.8" stroke="#dc3545" stroke-width="1.8" stroke-linecap="round"/></g>
       </g>
       <g id="seg-server-internet">
         <line x1="234" y1="23" x2="312" y2="23" stroke="currentColor" stroke-width="0.6"/>
         <circle class="seg-pulse" cx="234" cy="23" r="0.8"/>
-        <g class="seg-x">
-          <circle cx="273" cy="23" r="6" fill="#ffffff"/>
-          <line x1="269.8" y1="19.8" x2="276.2" y2="26.2" stroke="#dc3545" stroke-width="1.8" stroke-linecap="round"/>
-          <line x1="269.8" y1="26.2" x2="276.2" y2="19.8" stroke="#dc3545" stroke-width="1.8" stroke-linecap="round"/>
-        </g>
+        <g class="seg-x"><circle cx="273" cy="23" r="6" fill="#ffffff"/><line x1="269.8" y1="19.8" x2="276.2" y2="26.2" stroke="#dc3545" stroke-width="1.8" stroke-linecap="round"/><line x1="269.8" y1="26.2" x2="276.2" y2="19.8" stroke="#dc3545" stroke-width="1.8" stroke-linecap="round"/></g>
       </g>
       <g id="seg-internet-mobile">
         <line x1="326" y1="23" x2="404" y2="23" stroke="currentColor" stroke-width="0.6"/>
         <circle class="seg-pulse" cx="326" cy="23" r="0.8"/>
-        <g class="seg-x">
-          <circle cx="365" cy="23" r="6" fill="#ffffff"/>
-          <line x1="361.8" y1="19.8" x2="368.2" y2="26.2" stroke="#dc3545" stroke-width="1.8" stroke-linecap="round"/>
-          <line x1="361.8" y1="26.2" x2="368.2" y2="19.8" stroke="#dc3545" stroke-width="1.8" stroke-linecap="round"/>
-        </g>
+        <g class="seg-x"><circle cx="365" cy="23" r="6" fill="#ffffff"/><line x1="361.8" y1="19.8" x2="368.2" y2="26.2" stroke="#dc3545" stroke-width="1.8" stroke-linecap="round"/><line x1="361.8" y1="26.2" x2="368.2" y2="19.8" stroke="#dc3545" stroke-width="1.8" stroke-linecap="round"/></g>
       </g>
-
-      <!-- 1. Module, split top/bottom: GPS fix status (text "GPS") / module network status (power icon) -->
       <g clip-path="url(#moduleClip)">
-        <g id="module-gps-half">
-          <rect x="2" y="8" width="36" height="15" fill="currentColor"/>
-          <title>GPS fix status</title>
-        </g>
-        <g id="module-net-half">
-          <rect x="2" y="23" width="36" height="15" fill="currentColor"/>
-          <title>Module network status</title>
-        </g>
+        <g id="module-gps-half"><rect x="2" y="8" width="36" height="15" fill="currentColor"/><title>GPS fix status</title></g>
+        <g id="module-net-half"><rect x="2" y="23" width="36" height="15" fill="currentColor"/><title>Module network status</title></g>
       </g>
       <rect x="2" y="8" width="36" height="30" rx="6" fill="none" stroke="#2c3e50" stroke-width="1.3"/>
       <line x1="3" y1="23" x2="37" y2="23" stroke="#ffffff" stroke-width="1"/>
-      <!-- GPS text label (top half) -->
       <text x="20" y="18.3" font-size="7" font-weight="700" letter-spacing="0.3" fill="#ffffff" text-anchor="middle" font-family="'Segoe UI', Tahoma, Geneva, Verdana, sans-serif">GPS</text>
-      <!-- Power-button icon (bottom half) -->
       <path d="M20 27.6 v3.4" stroke="#ffffff" stroke-width="1.3" fill="none" stroke-linecap="round"/>
       <path d="M17.1 29.1 A3.6 3.6 0 1 0 22.9 29.1" stroke="#ffffff" stroke-width="1.3" fill="none" stroke-linecap="round"/>
       <text x="20" y="45" font-size="7.2" fill="#2c3e50" text-anchor="middle" font-weight="600">Module</text>
-
-      <!-- 2. Internet (globe) -->
       <g>
         <circle cx="119" cy="21" r="11" fill="#eaf3ff" stroke="#007bff" stroke-width="1.3"/>
         <ellipse cx="119" cy="21" rx="4.5" ry="11" fill="none" stroke="#007bff" stroke-width="1"/>
@@ -489,8 +128,6 @@ h2 {
         <path d="M110.3 27 Q119 21 127.7 27" fill="none" stroke="#007bff" stroke-width="1"/>
         <text x="119" y="45" font-size="7.2" fill="#2c3e50" text-anchor="middle" font-weight="600">Internet</text>
       </g>
-
-      <!-- 3. Server (Firebase) -->
       <g>
         <rect x="200" y="8" width="38" height="30" rx="6" fill="#eaf3ff" stroke="#28a745" stroke-width="1.3"/>
         <rect x="206" y="13" width="26" height="7" rx="2" fill="none" stroke="#28a745" stroke-width="1.3"/>
@@ -499,8 +136,6 @@ h2 {
         <circle cx="211" cy="25.5" r="1.2" fill="#28a745"/>
         <text x="219" y="45" font-size="7.2" fill="#2c3e50" text-anchor="middle" font-weight="600">Server</text>
       </g>
-
-      <!-- 4. Internet (globe) again -->
       <g>
         <circle cx="319" cy="21" r="11" fill="#eaf3ff" stroke="#007bff" stroke-width="1.3"/>
         <ellipse cx="319" cy="21" rx="4.5" ry="11" fill="none" stroke="#007bff" stroke-width="1"/>
@@ -509,8 +144,6 @@ h2 {
         <path d="M310.3 27 Q319 21 327.7 27" fill="none" stroke="#007bff" stroke-width="1"/>
         <text x="319" y="45" font-size="7.2" fill="#2c3e50" text-anchor="middle" font-weight="600">Internet</text>
       </g>
-
-      <!-- 5. Mobile (live report) -->
       <g>
         <rect x="400" y="6" width="20" height="34" rx="4" fill="#eaf3ff" stroke="#28a745" stroke-width="1.3"/>
         <rect x="403" y="10" width="14" height="22" rx="1" fill="none" stroke="#28a745" stroke-width="1"/>
@@ -533,14 +166,11 @@ h2 {
     <div class="stat-value"><span id="total-distance-value">0.0</span><span class="stat-unit">km</span></div>
   </div>
 </div>
-<!-- 1. Latitude/Longitude Display Area -->
 <div id="feeds-container" class="feeds-grid">Loading coordinates...</div>
-<!-- History view status bar: shown only while viewing a past trip instead of the live feed -->
 <div id="trip-status-bar">
   <span id="trip-status-text"></span>
   <button id="go-live-btn">Go Live</button>
 </div>
-<!-- 2. Leaflet Map (shows trajectory path) -->
 <div class="map-box">
 <div id="live-map-frame"></div>
 <button id="recenter-btn" title="Re-center map">
@@ -569,27 +199,47 @@ const FIREBASE_PATH = "/gps_history.json";
 const url = `https://${FIREBASE_HOST}${FIREBASE_PATH}?orderBy=%22$key%22&limitToLast=200`;
 const TRIPS_PATH = "/trip_history.json";
 const tripsUrl = `https://${FIREBASE_HOST}${TRIPS_PATH}`;
-// Connectivity heartbeat pushed by the firmware every ~5s regardless of GPS fix status
-// (see sendDeviceStatus() in the .ino) -- carries the module's real netOk + hasFix, so
-// the dashboard doesn't have to guess connectivity purely from GPS-fix freshness.
 const DEVICE_STATUS_PATH = "/device_status.json";
 const deviceStatusUrl = `https://${FIREBASE_HOST}${DEVICE_STATUS_PATH}?orderBy=%22$key%22&limitToLast=1`;
-// If the module goes offline (powered off, cellular lost, etc.) it simply stops pushing
-// heartbeats -- the LAST heartbeat that made it to Firebase before that just sits there
-// forever with netOk:true. A plain fetch of "the latest entry" can't tell the difference
-// between "still alive" and "died a while ago", so we treat any heartbeat older than this
-// many ms as stale/down.
-//
-// NOTE ON THE VALUE: the firmware's 5s status-push timer only decides WHEN a push is
-// attempted, not how long it takes. Each push (and, when a GPS fix also landed in the
-// same loop() cycle, the GPS-fix push right before it) is a full HTTPS POST over AT
-// commands with timeouts that can individually run into several seconds on a slow or
-// marginal cellular link. So two genuine, back-to-back "device is fine" heartbeats can
-// legitimately be 15-20s+ apart -- a 15s threshold flags a perfectly healthy device as
-// down the moment one push runs a little slow, then flips back the instant the next one
-// lands, producing a red/green flicker. 45s gives real headroom for that latency while
-// still catching an actually-disconnected module within well under a minute.
 const HEARTBEAT_STALE_MS = 45000;
+
+// The firmware currently pushes trip SUMMARIES to /trip_history (avgSpeedKmh,
+// distanceM, durationMs, startLat/startLng, endLat/endLng, maxSpeedKmh, ts) --
+// it does not send a full point-by-point path. The rest of this dashboard
+// (renderTripMenu, drawStaticTrip, formatTripLabel) expects each trip object
+// to look like { startTime, endTime, points: [[lat,lng], ...] }. Without this
+// normalization step every summary record gets silently dropped by the
+// Array.isArray(t.points) filter below, so the Trip menu always showed
+// "No past trips detected yet" even when Firebase had trips stored.
+// This adapts the summary shape into a 2-point (start -> end) path, while
+// still passing through untouched any record that already has a full
+// "points" array (e.g. if the firmware is ever upgraded to send one).
+function normalizeTripRecord(t) {
+  if (!t) return null;
+  if (Array.isArray(t.points) && t.points.length > 0) {
+    return t;
+  }
+  if (typeof t.startLat === 'number' && typeof t.startLng === 'number' &&
+      typeof t.endLat === 'number' && typeof t.endLng === 'number' &&
+      typeof t.ts === 'number') {
+    const endTime = t.ts;
+    const startTime = endTime - (t.durationMs || 0);
+    return {
+      startTime: startTime,
+      endTime: endTime,
+      points: [[t.startLat, t.startLng], [t.endLat, t.endLng]],
+      distanceM: t.distanceM,
+      maxSpeedKmh: t.maxSpeedKmh,
+      avgSpeedKmh: t.avgSpeedKmh,
+      // No full path was pushed for this trip -- only start/end. Marks that
+      // drawStaticTrip() should try fetching the real route from
+      // gps_history (by timestamp range) before falling back to this
+      // 2-point straight line.
+      isSummaryOnly: true
+    };
+  }
+  return null;
+}
 
 function loadTripsFromFirebase() {
   fetch(tripsUrl)
@@ -598,10 +248,7 @@ function loadTripsFromFirebase() {
       if (!data || typeof data !== 'object') return;
       const loaded = Object.keys(data)
         .sort()
-        .map(function(k) { return data[k]; })
-        // Guard against malformed/partial records (e.g. a denied read
-        // returning something unexpected) so a bad entry can't crash
-        // tripDistanceKm()/formatTripLabel() later.
+        .map(function(k) { return normalizeTripRecord(data[k]); })
         .filter(function(t) { return t && Array.isArray(t.points) && t.points.length > 0; });
       allTrips = loaded.concat(allTrips);
       if (document.getElementById('trip-panel').style.display === 'block') renderTripMenu();
@@ -611,41 +258,21 @@ function loadTripsFromFirebase() {
     });
 }
 
-// Reads the module's latest self-reported connectivity heartbeat and applies it:
-// netOk drives both the Module<->Internet line AND the Module node's bottom half
-// (power icon); hasFix drives the Module node's top half ("GPS" text). This is
-// what lets the map diagram show "internet stable, GPS still searching" (GPS
-// half blinks red) instead of looking dead while waiting for a first fix -- and
-// flip the top half to solid green the instant a fix lands. If the network
-// itself is down, the GPS half goes solid red (no blink), since fix status is
-// unknown/unreachable in that case.
-//
-// IMPORTANT: a successful fetch only proves Firebase returned *some* stored heartbeat --
-// it says nothing about whether the module is still the one producing it. If the module
-// is disconnected it stops pushing entirely, so the "latest" entry is just whatever was
-// last written before it went dark. We compare that entry's server timestamp against now
-// and treat anything older than HEARTBEAT_STALE_MS as down, regardless of what netOk/hasFix
-// say inside it.
 function fetchDeviceStatus() {
   fetch(deviceStatusUrl)
     .then(function(res) { return res.json(); })
     .then(function(data) {
       if (!data) {
-        // No heartbeat has ever arrived -- treat as unknown/down rather than leaving
-        // stale green dots up.
         updateDiagramFromStatus({ moduleInternetOk: false });
         updateModuleNode({ netOk: false, hasFix: false });
         return;
       }
       const keys = Object.keys(data);
       const latest = data[keys[keys.length - 1]];
-
       const ageMs = Date.now() - (latest.ts || 0);
       const isStale = !latest.ts || ageMs > HEARTBEAT_STALE_MS;
-
       const netOk = isStale ? false : !!latest.netOk;
       const hasFix = isStale ? false : !!latest.hasFix;
-
       updateDiagramFromStatus({ moduleInternetOk: netOk });
       updateModuleNode({ netOk: netOk, hasFix: hasFix });
     })
@@ -656,25 +283,18 @@ function fetchDeviceStatus() {
     });
 }
 
-// Colors the Module node's two halves in the map diagram: top = GPS fix status
-// ("GPS" text; green solid once fixed, red blinking while searching with a
-// healthy network, red solid if the network itself is down), bottom = the
-// module's own network/internet status (power icon; green solid / red solid).
 function updateModuleNode({ netOk, hasFix }) {
   const gpsHalf = document.getElementById('module-gps-half');
   const netHalf = document.getElementById('module-net-half');
   if (netHalf) netHalf.classList.toggle('half-offline', !netOk);
   if (gpsHalf) {
     if (hasFix) {
-      // Fix acquired -> solid green, no blink.
       gpsHalf.classList.remove('half-offline');
       gpsHalf.classList.remove('gps-blink');
     } else if (netOk) {
-      // Network fine, still searching for a fix -> red, blinking.
       gpsHalf.classList.add('half-offline');
       gpsHalf.classList.add('gps-blink');
     } else {
-      // Network itself is down -> red, solid (not blinking).
       gpsHalf.classList.add('half-offline');
       gpsHalf.classList.remove('gps-blink');
     }
@@ -682,7 +302,6 @@ function updateModuleNode({ netOk, hasFix }) {
 }
 
 const MAPTILER_KEY = "uqDjOTcIKm28iF924vhH";
-
 const MAP_STYLES = [
   { id: 'openstreetmap', label: 'Streets (OSM)', ext: 'png' },
   { id: 'hybrid',        label: 'Hybrid (Satellite+Roads)', ext: 'jpg' }
@@ -698,35 +317,20 @@ function setStatValue(el, text) {
   el.classList.add('value-flash');
 }
 
-// Colors one connection group in the network-flow diagram red/green.
-// segId matches one of the <g id="seg-..."> groups in the SVG.
 function setSegmentConnected(segId, isConnected) {
   const el = document.getElementById(segId);
   if (!el) return;
   el.classList.toggle('seg-offline', !isConnected);
 }
 
-// Updates all four hops. The firmware (as of the netOk/hasFix update) now pushes its
-// own real cellular/data status to /device_status.json every ~5s regardless of GPS fix
-// status, so Module<->Internet is driven by that real reading (see fetchDeviceStatus()
-// below) rather than guessed from GPS-fix freshness like it used to be.
-//   moduleInternetOk -> Module<->Internet (from the firmware's own netOk, via /device_status.json)
-//   firebaseReachable -> Internet<->Server, Server<->Internet (did our own fetch to Firebase succeed)
-//   browserOnline -> Internet<->Mobile (this browser's own connection)
 function updateDiagramFromStatus({ moduleInternetOk, firebaseReachable, browserOnline }) {
-  if (moduleInternetOk !== undefined) {
-    setSegmentConnected('seg-module-internet', moduleInternetOk);
-  }
+  if (moduleInternetOk !== undefined) setSegmentConnected('seg-module-internet', moduleInternetOk);
   if (firebaseReachable !== undefined) {
     setSegmentConnected('seg-internet-server', firebaseReachable);
     setSegmentConnected('seg-server-internet', firebaseReachable);
   }
-  if (browserOnline !== undefined) {
-    setSegmentConnected('seg-internet-mobile', browserOnline);
-  }
+  if (browserOnline !== undefined) setSegmentConnected('seg-internet-mobile', browserOnline);
 }
-// Browser-level connectivity (this phone/PC has no internet at all) --
-// only the Internet<->Mobile hop, the other three are unaffected by this event.
 window.addEventListener('offline', () => updateDiagramFromStatus({ browserOnline: false }));
 window.addEventListener('online', () => updateDiagramFromStatus({ browserOnline: navigator.onLine }));
 
@@ -735,8 +339,7 @@ function haversineKm(lat1, lon1, lat2, lon2) {
   const toRad = d => d * Math.PI / 180;
   const dLat = toRad(lat2 - lat1);
   const dLon = toRad(lon2 - lon1);
-  const a = Math.sin(dLat / 2) ** 2 +
-            Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
@@ -745,7 +348,6 @@ let map = null;
 let pathLine = null;
 let startMarker = null;
 let liveMarker = null;
-
 let fixedTripStartPoint = null;
 let fixedTripStartTime = null;
 let currentTripPoints = [];
@@ -790,16 +392,10 @@ let followMode = true;
 let lastKnownPoint = null;
 
 document.getElementById('recenter-btn').addEventListener('click', function() {
-  if (viewingTripKey !== 'live') {
-    selectTrip('live');
-    return;
-  }
+  if (viewingTripKey !== 'live') { selectTrip('live'); return; }
   followMode = true;
-  if (map && lastKnownPoint) {
-    map.panTo(lastKnownPoint, { animate: true });
-  } else if (map && lastPathBounds) {
-    map.fitBounds(lastPathBounds, { padding: [30, 30] });
-  }
+  if (map && lastKnownPoint) { map.panTo(lastKnownPoint, { animate: true }); }
+  else if (map && lastPathBounds) { map.fitBounds(lastPathBounds, { padding: [30, 30] }); }
 });
 
 document.getElementById('style-toggle-btn').addEventListener('click', function() {
@@ -821,9 +417,7 @@ document.addEventListener('click', function(e) {
     panel.style.display = 'none';
   }
 });
-document.getElementById('go-live-btn').addEventListener('click', function() {
-  selectTrip('live');
-});
+document.getElementById('go-live-btn').addEventListener('click', function() { selectTrip('live'); });
 
 function formatClock(d) {
   let h = d.getHours();
@@ -833,8 +427,14 @@ function formatClock(d) {
   return `${h}:${m} ${ampm}`;
 }
 
+// Prefer the firmware's own reported distanceM (accurate for the real driven
+// path) when present; fall back to straight-line haversine over points only
+// for trips that don't carry a distanceM (e.g. the in-memory live-session
+// trips built from the raw GPS fix stream, which DO have full paths).
 function tripDistanceKm(trip) {
-  if (!trip || !Array.isArray(trip.points)) return 0;
+  if (!trip) return 0;
+  if (typeof trip.distanceM === 'number') return trip.distanceM / 1000;
+  if (!Array.isArray(trip.points)) return 0;
   let d = 0;
   for (let i = 1; i < trip.points.length; i++) {
     d += haversineKm(trip.points[i - 1][0], trip.points[i - 1][1], trip.points[i][0], trip.points[i][1]);
@@ -873,11 +473,8 @@ function selectTrip(key) {
   if (key === 'live') {
     followMode = true;
     statusBar.style.display = 'none';
-    if (map && lastKnownPoint) {
-      map.panTo(lastKnownPoint, { animate: true });
-    } else if (map && lastPathBounds) {
-      map.fitBounds(lastPathBounds, { padding: [30, 30] });
-    }
+    if (map && lastKnownPoint) { map.panTo(lastKnownPoint, { animate: true }); }
+    else if (map && lastPathBounds) { map.fitBounds(lastPathBounds, { padding: [30, 30] }); }
   } else {
     followMode = false;
     const trip = allTrips[key];
@@ -887,17 +484,65 @@ function selectTrip(key) {
   }
 }
 
-function drawStaticTrip(trip) {
-  initMapIfNeeded();
+// Fetches the real, point-by-point road path for a trip by pulling every
+// gps_history fix recorded between the trip's startTime and endTime (with a
+// small buffer, since the trip's own startTime/endTime are derived from
+// ts/durationMs and may not land exactly on a recorded fix). gps_history
+// already has every raw GPS reading, so this gives the actual driven route
+// instead of the straight start->end line used as a fallback.
+const TRIP_RANGE_BUFFER_MS = 10000;
+function fetchGpsHistoryRange(startTime, endTime) {
+  const rangeStart = startTime - TRIP_RANGE_BUFFER_MS;
+  const rangeEnd = endTime + TRIP_RANGE_BUFFER_MS;
+  const rangeUrl = `https://${FIREBASE_HOST}/gps_history.json?orderBy=%22ts%22&startAt=${rangeStart}&endAt=${rangeEnd}`;
+  return fetch(rangeUrl)
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (!data || typeof data !== 'object') return [];
+      const entries = Object.keys(data)
+        .map(function(k) { return data[k]; })
+        .filter(function(e) {
+          return e && typeof e.lat === 'number' && typeof e.lng === 'number' &&
+                 typeof e.ts === 'number' && !(e.lat === 0 && e.lng === 0);
+        });
+      entries.sort(function(a, b) { return a.ts - b.ts; });
+      return entries.map(function(e) { return [e.lat, e.lng]; });
+    });
+}
+
+function renderTripPath(trip) {
   if (pathLine) map.removeLayer(pathLine);
   if (startMarker) map.removeLayer(startMarker);
   if (liveMarker) map.removeLayer(liveMarker);
   pathLine = L.polyline(trip.points, { color: '#6c757d', weight: 4, opacity: 0.85 }).addTo(map);
-  startMarker = L.circleMarker(trip.points[0], { radius: 6, color: '#28a745', fillColor: '#28a745', fillOpacity: 1 })
-    .addTo(map).bindPopup('Start');
-  liveMarker = L.circleMarker(trip.points[trip.points.length - 1], { radius: 6, color: '#dc3545', fillColor: '#dc3545', fillOpacity: 1 })
-    .addTo(map).bindPopup('End');
+  startMarker = L.circleMarker(trip.points[0], { radius: 6, color: '#28a745', fillColor: '#28a745', fillOpacity: 1 }).addTo(map).bindPopup('Start');
+  liveMarker = L.circleMarker(trip.points[trip.points.length - 1], { radius: 6, color: '#dc3545', fillColor: '#dc3545', fillOpacity: 1 }).addTo(map).bindPopup('End');
   map.fitBounds(pathLine.getBounds(), { padding: [30, 30] });
+}
+
+function drawStaticTrip(trip) {
+  initMapIfNeeded();
+  // trip.isSummaryOnly means we only have the 2-point start->end line from
+  // normalizeTripRecord(); try to replace it with the real path from
+  // gps_history before drawing. Once fetched, cache it on the trip object
+  // and clear the flag so reselecting the same trip doesn't refetch.
+  if (trip.isSummaryOnly) {
+    const fallbackPoints = trip.points;
+    fetchGpsHistoryRange(trip.startTime, trip.endTime)
+      .then(function(points) {
+        if (viewingTripKey === allTrips.indexOf(trip) && points.length > 1) {
+          trip.points = points;
+          trip.isSummaryOnly = false;
+        }
+        renderTripPath(trip.points.length > 1 ? trip : { points: fallbackPoints });
+      })
+      .catch(function(err) {
+        console.error('Failed to fetch trip path from gps_history:', err);
+        renderTripPath({ points: fallbackPoints });
+      });
+  } else {
+    renderTripPath(trip);
+  }
 }
 
 const CAR_SVG = `
@@ -928,8 +573,7 @@ function computeBearing(latA, lonA, latB, lonB) {
   const toDeg = r => r * 180 / Math.PI;
   const dLon = toRad(lonB - lonA);
   const y = Math.sin(dLon) * Math.cos(toRad(latB));
-  const x = Math.cos(toRad(latA)) * Math.sin(toRad(latB)) -
-            Math.sin(toRad(latA)) * Math.cos(toRad(latB)) * Math.cos(dLon);
+  const x = Math.cos(toRad(latA)) * Math.sin(toRad(latB)) - Math.sin(toRad(latA)) * Math.cos(toRad(latB)) * Math.cos(dLon);
   return (toDeg(Math.atan2(y, x)) + 360) % 360;
 }
 
@@ -943,16 +587,10 @@ function getOrCreateTileLayer(styleId) {
     { maxZoom: 20, attribution: '&copy; MapTiler &copy; OpenStreetMap contributors' }
   );
   layer.on('tileerror', function() {
-    if (!tileErrorShown) {
-      tileErrorShown = true;
-      document.getElementById('tile-warning').style.display = 'block';
-    }
+    if (!tileErrorShown) { tileErrorShown = true; document.getElementById('tile-warning').style.display = 'block'; }
   });
   layer.on('tileload', function() {
-    if (tileErrorShown) {
-      tileErrorShown = false;
-      document.getElementById('tile-warning').style.display = 'none';
-    }
+    if (tileErrorShown) { tileErrorShown = false; document.getElementById('tile-warning').style.display = 'none'; }
   });
   tileLayerCache[styleId] = layer;
   return layer;
@@ -971,10 +609,8 @@ function initMapIfNeeded() {
  if (map) return;
  map = L.map('live-map-frame').setView([20.95575, 84.47108], 15);
  getOrCreateTileLayer(currentStyleId).addTo(map);
-
  setTimeout(() => map.invalidateSize(), 200);
  window.addEventListener('resize', () => map.invalidateSize());
-
  const mapContainer = map.getContainer();
  const disableFollow = () => { followMode = false; };
  mapContainer.addEventListener('mousedown', disableFollow);
@@ -1022,16 +658,10 @@ data.feeds.forEach(f => {
  trackTimes.push(new Date(f.created_at).getTime());
  }
 });
-// NOTE: trip detection is purely client-side/in-memory for display purposes
-// (drawing the current live path and populating the "Live Tracking" segment
-// of the Trip menu for this session). It no longer writes anything back to
-// Firebase -- this dashboard only ever READS gps_history, trip_history and
-// device_status, it never creates records in them.
 for (let i = 0; i < trackPoints.length; i++) {
   const t = trackTimes[i];
   if (lastProcessedTime !== null && t <= lastProcessedTime) continue;
   const pt = trackPoints[i];
-
   if (clusterAnchorPoint === null) {
     clusterAnchorPoint = pt;
     clusterAnchorTime = t;
@@ -1047,15 +677,8 @@ for (let i = 0; i < trackPoints.length; i++) {
     if (distKm > STOP_RADIUS_KM) {
       const clusterDuration = (lastProcessedTime !== null ? lastProcessedTime : clusterAnchorTime) - clusterAnchorTime;
       if (clusterDuration >= STOP_DURATION_MS) {
-        // A stop long enough to end the current trip segment. Kept in memory
-        // only (allTrips) so it shows up in this session's Trip menu -- not
-        // saved to Firebase.
         if (currentTripPoints.length > 1) {
-          const finishedTrip = {
-            startTime: fixedTripStartTime,
-            endTime: lastProcessedTime,
-            points: currentTripPoints.slice()
-          };
+          const finishedTrip = { startTime: fixedTripStartTime, endTime: lastProcessedTime, points: currentTripPoints.slice() };
           allTrips.push(finishedTrip);
         }
         fixedTripStartPoint = pt;
@@ -1074,7 +697,6 @@ for (let i = 0; i < trackPoints.length; i++) {
   }
   lastProcessedTime = t;
 }
-
 let tripPoints = currentTripPoints.length > 0 ? currentTripPoints : trackPoints;
 let maxSpeedInWindow = 0;
 data.feeds.forEach(f => {
@@ -1104,11 +726,9 @@ const pingTime = dateObj.getTime();
 const nowTime = new Date().getTime();
 const diffTotalMins = Math.floor((nowTime - pingTime) / (1000 * 60));
 let agoText = "";
-if (diffTotalMins < 1) {
-agoText = "<b>(Just Now)</b>";
-} else if (diffTotalMins < 60) {
-agoText = `<b>(${diffTotalMins} mint ago)</b>`;
-} else if (diffTotalMins < 1440) {
+if (diffTotalMins < 1) { agoText = "<b>(Just Now)</b>"; }
+else if (diffTotalMins < 60) { agoText = `<b>(${diffTotalMins} mint ago)</b>`; }
+else if (diffTotalMins < 1440) {
 const displayHours = Math.floor(diffTotalMins / 60);
 const displayMins = diffTotalMins % 60;
 agoText = `<b>(${displayHours} hour ${displayMins} mint ago)</b>`;
@@ -1133,8 +753,7 @@ if (viewingTripKey === 'live' && tripPoints.length > 0) {
  if (pathLine) { map.removeLayer(pathLine); }
  pathLine = L.polyline(tripPoints, { color: '#007bff', weight: 4, opacity: 0.8 }).addTo(map);
  if (startMarker) { map.removeLayer(startMarker); }
- startMarker = L.circleMarker(fixedTripStartPoint || tripPoints[0], { radius: 6, color: '#28a745', fillColor: '#28a745', fillOpacity: 1 })
- .addTo(map).bindPopup("Start");
+ startMarker = L.circleMarker(fixedTripStartPoint || tripPoints[0], { radius: 6, color: '#28a745', fillColor: '#28a745', fillOpacity: 1 }).addTo(map).bindPopup("Start");
  const lastPoint = tripPoints[tripPoints.length - 1];
  if (tripPoints.length >= 2) {
    const prevPoint = tripPoints[tripPoints.length - 2];
@@ -1146,12 +765,8 @@ if (viewingTripKey === 'live' && tripPoints.length > 0) {
  liveMarker = L.marker(lastPoint, { icon: getCarIcon(lastHeading) }).addTo(map).bindPopup("Latest position");
  lastPathBounds = pathLine.getBounds();
  lastKnownPoint = lastPoint;
- if (!hasAutoFitted) {
-   map.fitBounds(lastPathBounds, { padding: [30, 30] });
-   hasAutoFitted = true;
- } else if (followMode) {
-   map.panTo(lastPoint, { animate: true });
- }
+ if (!hasAutoFitted) { map.fitBounds(lastPathBounds, { padding: [30, 30] }); hasAutoFitted = true; }
+ else if (followMode) { map.panTo(lastPoint, { animate: true }); }
 }
 const latestFeed = data.feeds[data.feeds.length - 1];
 const lastPingTime = new Date(latestFeed.created_at).getTime();
@@ -1162,20 +777,14 @@ if (diffMinutes <= 3) {
   setStatValue(document.getElementById('vehicle-status'), "Connected");
   vehicleCard.classList.remove('disconnected');
   vehicleCard.classList.add('connected');
-  // Fetch succeeded (we're inside .then), so Internet<->Server<->Internet is up.
-  // Module<->Internet is handled separately by fetchDeviceStatus(), using the
-  // firmware's own real netOk instead of guessing from fix freshness.
   updateDiagramFromStatus({ firebaseReachable: true });
 } else {
   setStatValue(document.getElementById('vehicle-status'), "Disconnected");
   vehicleCard.classList.remove('connected');
   vehicleCard.classList.add('disconnected');
-  // Fetch itself still succeeded -- only Internet<->Server<->Internet is confirmed here.
   updateDiagramFromStatus({ firebaseReachable: true });
 }
-if (document.getElementById('trip-panel').style.display === 'block') {
-  renderTripMenu();
-}
+if (document.getElementById('trip-panel').style.display === 'block') { renderTripMenu(); }
 })
 .catch(error => {
 console.error("App layer execution exception:", error);
@@ -1183,9 +792,6 @@ const vehicleCard = document.getElementById('vehicle-card');
 setStatValue(document.getElementById('vehicle-status'), "Disconnected");
 vehicleCard.classList.remove('connected');
 vehicleCard.classList.add('disconnected');
-// The fetch to Firebase itself failed -- that's specifically the
-// Internet<->Server path. Module<->Internet is left to fetchDeviceStatus()'s
-// own catch handler, which marks it down independently.
 updateDiagramFromStatus({ firebaseReachable: false });
 });
 }
