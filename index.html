@@ -169,8 +169,16 @@ h2 { color: #333; padding-bottom: 0; font-size: 20px; margin: 0 0 15px 0; }
       <rect x="2" y="8" width="36" height="30" rx="6" fill="none" stroke="#2c3e50" stroke-width="1.3"/>
       <line x1="3" y1="23" x2="37" y2="23" stroke="#ffffff" stroke-width="1"/>
       <text x="20" y="18.3" font-size="7" font-weight="700" letter-spacing="0.3" fill="#ffffff" text-anchor="middle" font-family="'Segoe UI', Tahoma, Geneva, Verdana, sans-serif">GPS</text>
-      <path d="M20 27.6 v3.4" stroke="#ffffff" stroke-width="1.3" fill="none" stroke-linecap="round"/>
-      <path d="M17.1 29.1 A3.6 3.6 0 1 0 22.9 29.1" stroke="#ffffff" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+      <!-- FIX: power icon is now toggled with a live signal-% text (see updateModuleNode() below).
+           When the module's network half is green (netOk), module-power-icon is hidden and
+           module-signal-text shows the current cellular signal as a percentage, derived from
+           signalRssi (device_status.json, AT+CSQ's 0-31 scale). When offline, the plain power
+           icon is shown instead since there's no live reading to trust in that state. -->
+      <g id="module-power-icon">
+        <path d="M20 27.6 v3.4" stroke="#ffffff" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+        <path d="M17.1 29.1 A3.6 3.6 0 1 0 22.9 29.1" stroke="#ffffff" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+      </g>
+      <text id="module-signal-text" x="20" y="32" font-size="6.5" font-weight="700" fill="#ffffff" text-anchor="middle" style="display:none;">00%</text>
       <text x="20" y="45" font-size="7.2" fill="#2c3e50" text-anchor="middle" font-weight="600">Module</text>
       <g>
         <circle cx="119" cy="21" r="11" fill="#eaf3ff" stroke="#007bff" stroke-width="1.3"/>
@@ -347,7 +355,7 @@ function fetchDeviceStatus() {
     .then(function(data) {
       if (!data) {
         updateDiagramFromStatus({ moduleInternetOk: false });
-        updateModuleNode({ netOk: false, hasFix: false });
+        updateModuleNode({ netOk: false, hasFix: false, signalRssi: null });
         return;
       }
       const keys = Object.keys(data);
@@ -356,19 +364,27 @@ function fetchDeviceStatus() {
       const isStale = !latest.ts || ageMs > HEARTBEAT_STALE_MS;
       const netOk = isStale ? false : !!latest.netOk;
       const hasFix = isStale ? false : !!latest.hasFix;
+      // FIX: signalRssi (raw AT+CSQ 0-31 value, added by the firmware alongside
+      // netOk/hasFix) is read here too, so updateModuleNode() can turn it into a
+      // live "xx%" reading on the module box instead of the static power icon.
+      // A stale heartbeat or a missing/non-numeric field is treated as "unknown"
+      // (null) rather than showing a stale or fabricated percentage.
+      const signalRssi = (!isStale && typeof latest.signalRssi === 'number') ? latest.signalRssi : null;
       updateDiagramFromStatus({ moduleInternetOk: netOk });
-      updateModuleNode({ netOk: netOk, hasFix: hasFix });
+      updateModuleNode({ netOk: netOk, hasFix: hasFix, signalRssi: signalRssi });
     })
     .catch(function(err) {
       console.error('Failed to fetch device status:', err);
       updateDiagramFromStatus({ moduleInternetOk: false });
-      updateModuleNode({ netOk: false, hasFix: false });
+      updateModuleNode({ netOk: false, hasFix: false, signalRssi: null });
     });
 }
 
-function updateModuleNode({ netOk, hasFix }) {
+function updateModuleNode({ netOk, hasFix, signalRssi }) {
   const gpsHalf = document.getElementById('module-gps-half');
   const netHalf = document.getElementById('module-net-half');
+  const powerIcon = document.getElementById('module-power-icon');
+  const signalText = document.getElementById('module-signal-text');
   if (netHalf) netHalf.classList.toggle('half-offline', !netOk);
   if (gpsHalf) {
     if (hasFix) {
@@ -381,6 +397,23 @@ function updateModuleNode({ netOk, hasFix }) {
       gpsHalf.classList.add('half-offline');
       gpsHalf.classList.remove('gps-blink');
     }
+  }
+  // FIX: when the module's network half is GREEN (netOk true) and we have a
+  // usable signal reading, swap the static power icon out for the live
+  // cellular signal strength as a percentage (signalRssi is AT+CSQ's 0-31
+  // scale, so pct = round(rssi/31*100)). When offline, or when netOk is true
+  // but no signal reading has arrived yet, fall back to the plain power icon
+  // rather than showing a stale or fabricated percentage.
+  if (netOk && typeof signalRssi === 'number' && signalRssi >= 0 && signalRssi <= 31) {
+    const pct = Math.round((signalRssi / 31) * 100);
+    if (powerIcon) powerIcon.style.display = 'none';
+    if (signalText) {
+      signalText.style.display = '';
+      signalText.textContent = pct + '%';
+    }
+  } else {
+    if (powerIcon) powerIcon.style.display = '';
+    if (signalText) signalText.style.display = 'none';
   }
 }
 
