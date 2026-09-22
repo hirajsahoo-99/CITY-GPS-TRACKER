@@ -95,6 +95,28 @@ h2 { color: #333; padding-bottom: 0; font-size: 20px; margin: 0 0 15px 0; }
 #network-diagram #module-gps-half.gps-blink { animation: gpsHalfBlink 1s steps(1, end) infinite; }
 #network-diagram svg { display: block; width: 100%; height: 46px; }
 #tile-warning { position: absolute; bottom: 8px; left: 8px; right: 8px; z-index: 1000; background: rgba(220, 53, 69, 0.92); color: #fff; font-size: 11px; padding: 6px 8px; border-radius: 6px; display: none; }
+#network-analysis-view { display: none; position: absolute; inset: 0; z-index: 1500; background: #ffffff; box-sizing: border-box; padding: 10px; }
+#network-analysis-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+#network-analysis-title { font-size: 14px; font-weight: 700; color: #2c3e50; }
+#network-analysis-close-btn { flex: 0 0 auto; border: none; background: #007bff; color: #fff; font-size: 11px; font-weight: 600; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
+#network-analysis-close-btn:hover { background: #0062cc; }
+#na-legend { display: flex; gap: 14px; font-size: 11px; color: #2c3e50; margin-bottom: 8px; align-items: center; }
+.na-legend-item { display: flex; align-items: center; gap: 5px; }
+.na-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.na-dot-strong { background: #28a745; }
+.na-dot-medium { background: #ffc107; }
+.na-dot-weak { background: #dc3545; }
+#network-analysis-map { width: 100%; height: 280px; border-radius: 6px; overflow: hidden; border: 1px solid #ddd; background: #e5e3df; }
+#na-loading { font-size: 12px; color: #999; text-align: center; padding: 14px 0; }
+.sig-dot-marker { background: transparent; border: none; }
+.sig-dot { position: relative; width: 16px; height: 16px; }
+.sig-dot::before, .sig-dot::after { content: ''; position: absolute; left: 50%; top: 50%; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: var(--sig-ripple); z-index: 1; pointer-events: none; animation: sigRipple 1.8s ease-out infinite; }
+.sig-dot::after { animation-delay: 0.9s; }
+.sig-dot-core { position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: var(--sig-core); border: 2px solid #ffffff; box-sizing: border-box; box-shadow: 0 0 3px rgba(0,0,0,0.4); z-index: 2; }
+@keyframes sigRipple { 0% { transform: scale(0.6); opacity: 0.85; } 100% { transform: scale(3); opacity: 0; } }
+.sig-dot.sig-strong { --sig-ripple: rgba(40,167,69,0.5); --sig-core: #28a745; }
+.sig-dot.sig-medium { --sig-ripple: rgba(255,193,7,0.55); --sig-core: #e0a800; }
+.sig-dot.sig-weak { --sig-ripple: rgba(220,53,69,0.5); --sig-core: #dc3545; }
 </style>
 </head>
 <body>
@@ -122,6 +144,12 @@ h2 { color: #333; padding-bottom: 0; font-size: 20px; margin: 0 0 15px 0; }
         <path d="M14 10h2.2a1.6 1.6 0 0 1 1.6 1.6v5a1.5 1.5 0 0 0 3 0V8.6l-2.4-2.4" stroke="#2c3e50" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
       <span>Fuel Settings</span>
+    </div>
+    <div class="trip-item menu-entry" id="menu-network-item">
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M4 20h1.8v-4H4v4zM8.3 20h1.8v-8H8.3v8zM12.6 20h1.8V7h-1.8v13zM16.9 20h1.8V3h-1.8v17z" fill="#2c3e50"/>
+      </svg>
+      <span>Network Analysis</span>
     </div>
   </div>
   <div id="trip-panel"></div>
@@ -252,6 +280,19 @@ h2 { color: #333; padding-bottom: 0; font-size: 20px; margin: 0 0 15px 0; }
   </svg>
 </button>
 <div id="tile-warning">Map tiles blocked — check your MapTiler API key's allowed domains.</div>
+<div id="network-analysis-view">
+  <div id="network-analysis-header">
+    <span id="network-analysis-title">Network Analysis</span>
+    <button id="network-analysis-close-btn">Back to Map</button>
+  </div>
+  <div id="na-legend">
+    <span class="na-legend-item"><span class="na-dot na-dot-strong"></span>Strong</span>
+    <span class="na-legend-item"><span class="na-dot na-dot-medium"></span>Medium</span>
+    <span class="na-legend-item"><span class="na-dot na-dot-weak"></span>Weak</span>
+  </div>
+  <div id="network-analysis-map"></div>
+  <div id="na-loading">Loading network history…</div>
+</div>
 </div>
 <script>
 const FIREBASE_HOST = "city-gps-tracker-default-rtdb.asia-southeast1.firebasedatabase.app";
@@ -261,6 +302,12 @@ const TRIPS_PATH = "/trip_history.json";
 const tripsUrl = `https://${FIREBASE_HOST}${TRIPS_PATH}`;
 const DEVICE_STATUS_PATH = "/device_status.json";
 const deviceStatusUrl = `https://${FIREBASE_HOST}${DEVICE_STATUS_PATH}?orderBy=%22$key%22&limitToLast=1`;
+// For the Network Analysis view we pull a longer window of device_status
+// history (not just the latest heartbeat) so we can compute uptime %,
+// GPS fix rate, average signal, outage count, and draw the signal/
+// connectivity charts.
+const DEVICE_STATUS_HISTORY_LIMIT = 150;
+const deviceStatusHistoryUrl = `https://${FIREBASE_HOST}${DEVICE_STATUS_PATH}?orderBy=%22$key%22&limitToLast=${DEVICE_STATUS_HISTORY_LIMIT}`;
 const HEARTBEAT_STALE_MS = 45000;
 
 // Fuel cost settings -- defaults below; the settings (gear) button in the
@@ -417,6 +464,176 @@ function updateModuleNode({ netOk, hasFix, signalRssi }) {
   }
 }
 
+// ---- Network Analysis view --------------------------------------------
+// Opened from the hamburger menu. Swaps the map area for its own small
+// Leaflet map that plots WHERE each cellular signal reading was taken.
+// device_status only has hasFix/netOk/signalRssi/ts (no lat/lng), so each
+// signal reading is matched to the nearest-in-time gps_history fix to get
+// a location, then drawn as a colour-coded ripple dot (green/amber/red =
+// strong/medium/weak signal), same ripple style as the "Start" dot on the
+// live map.
+let isNetworkAnalysisOpen = false;
+let naRefreshTimer = null;
+let naMap = null;
+let naMarkersLayer = null;
+const NA_GPS_LIMIT = 1000;             // how many recent gps_history fixes to use as a location pool
+const NA_RANGE_BUFFER_MS = 60000;      // widen the device_status fetch window around those fixes
+const NA_MATCH_TOLERANCE_MS = 30000;   // max time gap to accept a signal reading as "at" a gps fix
+const gpsHistoryForNaUrl = `https://${FIREBASE_HOST}/gps_history.json?orderBy=%22$key%22&limitToLast=${NA_GPS_LIMIT}`;
+
+function initNaMapIfNeeded() {
+  if (naMap) return;
+  naMap = L.map('network-analysis-map').setView([20.95575, 84.47108], 14);
+  L.tileLayer(
+    `https://api.maptiler.com/maps/openstreetmap/{z}/{x}/{y}.png?key=${MAPTILER_KEY}`,
+    { maxZoom: 20, attribution: '&copy; MapTiler &copy; OpenStreetMap contributors' }
+  ).addTo(naMap);
+  naMarkersLayer = L.layerGroup().addTo(naMap);
+}
+
+function openNetworkAnalysis() {
+  isNetworkAnalysisOpen = true;
+  document.getElementById('network-analysis-view').style.display = 'block';
+  document.getElementById('recenter-btn').style.display = 'none';
+  document.getElementById('style-toggle-btn').style.display = 'none';
+  document.getElementById('tile-warning').style.display = 'none';
+  const loadingEl = document.getElementById('na-loading');
+  loadingEl.textContent = 'Loading network history…';
+  loadingEl.style.display = 'block';
+  initNaMapIfNeeded();
+  setTimeout(function() { if (naMap) naMap.invalidateSize(); }, 50);
+  fetchNetworkAnalysis();
+  if (naRefreshTimer) clearInterval(naRefreshTimer);
+  naRefreshTimer = setInterval(fetchNetworkAnalysis, 8000);
+}
+
+function closeNetworkAnalysis() {
+  isNetworkAnalysisOpen = false;
+  document.getElementById('network-analysis-view').style.display = 'none';
+  document.getElementById('recenter-btn').style.display = '';
+  document.getElementById('style-toggle-btn').style.display = '';
+  if (naRefreshTimer) { clearInterval(naRefreshTimer); naRefreshTimer = null; }
+}
+
+// device_status heartbeats are sent continuously every few seconds
+// regardless of whether there's a GPS fix, while gps_history rows are only
+// written when there IS a fix -- so gps_history is the sparser, "where do
+// we actually have a location" list. This fetches the signal readings
+// (with signalRssi) inside a ts window, sorted, so each gps fix can look
+// up the nearest one.
+function fetchDeviceStatusWithTs(startTime, endTime) {
+  const rangeUrl = `https://${FIREBASE_HOST}/device_status.json?orderBy=%22ts%22&startAt=${startTime}&endAt=${endTime}`;
+  return fetch(rangeUrl)
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (!data || typeof data !== 'object') return [];
+      const entries = Object.keys(data)
+        .map(function(k) { return data[k]; })
+        .filter(function(e) {
+          return e && typeof e.ts === 'number' && typeof e.signalRssi === 'number' &&
+                 e.signalRssi >= 0 && e.signalRssi <= 31;
+        });
+      entries.sort(function(a, b) { return a.ts - b.ts; });
+      return entries;
+    });
+}
+
+// Binary search for the entry closest in time to targetTs in a ts-sorted
+// array; returns null if nothing is within maxDiffMs (better no dot than a
+// dot with a made-up signal value).
+function nearestByTs(sorted, targetTs, maxDiffMs) {
+  if (!sorted || sorted.length === 0) return null;
+  let lo = 0, hi = sorted.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (sorted[mid].ts < targetTs) lo = mid + 1; else hi = mid;
+  }
+  let best = sorted[lo];
+  if (lo > 0) {
+    const prev = sorted[lo - 1];
+    if (Math.abs(prev.ts - targetTs) < Math.abs(best.ts - targetTs)) best = prev;
+  }
+  if (Math.abs(best.ts - targetTs) > maxDiffMs) return null;
+  return best;
+}
+
+function fetchNetworkAnalysis() {
+  fetch(gpsHistoryForNaUrl)
+    .then(function(res) { return res.json(); })
+    .then(function(gpsData) {
+      if (!gpsData || typeof gpsData !== 'object') { renderSignalMap([]); return; }
+      const gpsPoints = Object.keys(gpsData).sort()
+        .map(function(k) { return gpsData[k]; })
+        .filter(function(e) {
+          return e && typeof e.lat === 'number' && typeof e.lng === 'number' &&
+                 typeof e.ts === 'number' && !(e.lat === 0 && e.lng === 0);
+        });
+      if (gpsPoints.length === 0) { renderSignalMap([]); return; }
+      gpsPoints.sort(function(a, b) { return a.ts - b.ts; });
+      const minTs = gpsPoints[0].ts - NA_RANGE_BUFFER_MS;
+      const maxTs = gpsPoints[gpsPoints.length - 1].ts + NA_RANGE_BUFFER_MS;
+      return fetchDeviceStatusWithTs(minTs, maxTs).then(function(statusPoints) {
+        // FIX: plot every cellular signal reading, not just one per GPS
+        // fix. The old code looped over gpsPoints (capped, and often many
+        // of them share nearly the same spot) and pulled the single
+        // nearest signal reading for each -- so at most one dot per GPS
+        // fix ever got drawn, and readings that weren't the "nearest" one
+        // for some GPS point were silently dropped. That's why only the
+        // last/current spot showed up when the vehicle was stationary.
+        // Instead, loop over every signal reading returned for the time
+        // window and give EACH one its own dot, using the nearest-in-time
+        // GPS fix purely to look up a location for it.
+        const matched = [];
+        statusPoints.forEach(function(sp) {
+          const gp = nearestByTs(gpsPoints, sp.ts, NA_MATCH_TOLERANCE_MS);
+          if (gp) {
+            matched.push({ lat: gp.lat, lng: gp.lng, pct: Math.round((sp.signalRssi / 31) * 100), ts: sp.ts });
+          }
+        });
+        renderSignalMap(matched);
+      });
+    })
+    .catch(function(err) {
+      console.error('Failed to fetch network analysis data:', err);
+      const loadingEl = document.getElementById('na-loading');
+      loadingEl.textContent = 'Could not load network history.';
+      loadingEl.style.display = 'block';
+    });
+}
+
+function makeSignalMarker(latlng, pct) {
+  let tier = 'sig-weak';
+  if (pct >= 70) tier = 'sig-strong';
+  else if (pct >= 40) tier = 'sig-medium';
+  return L.marker(latlng, {
+    icon: L.divIcon({
+      className: 'sig-dot-marker',
+      html: '<div class="sig-dot ' + tier + '"><div class="sig-dot-core"></div></div>',
+      iconSize: [16, 16],
+      iconAnchor: [8, 8],
+      popupAnchor: [0, -8]
+    })
+  }).bindPopup(pct + '% signal');
+}
+
+function renderSignalMap(points) {
+  const loadingEl = document.getElementById('na-loading');
+  if (!naMap || !naMarkersLayer) return;
+  naMarkersLayer.clearLayers();
+  if (!points || points.length === 0) {
+    loadingEl.textContent = 'No location-matched signal readings yet.';
+    loadingEl.style.display = 'block';
+    return;
+  }
+  loadingEl.style.display = 'none';
+  const bounds = [];
+  points.forEach(function(p) {
+    makeSignalMarker([p.lat, p.lng], p.pct).addTo(naMarkersLayer);
+    bounds.push([p.lat, p.lng]);
+  });
+  naMap.fitBounds(bounds, { padding: [24, 24], maxZoom: 17 });
+}
+
 const MAPTILER_KEY = "uqDjOTcIKm28iF924vhH";
 const MAP_STYLES = [
   { id: 'openstreetmap', label: 'Streets (OSM)', ext: 'png' },
@@ -563,6 +780,14 @@ document.getElementById('menu-fuel-item').addEventListener('click', function(e) 
   document.getElementById('mileage-input').value = MILEAGE_KM_PER_LITRE;
   document.getElementById('settings-msg').textContent = '';
   document.getElementById('settings-panel').style.display = 'block';
+});
+document.getElementById('menu-network-item').addEventListener('click', function(e) {
+  e.stopPropagation();
+  closeAllMenus();
+  openNetworkAnalysis();
+});
+document.getElementById('network-analysis-close-btn').addEventListener('click', function() {
+  closeNetworkAnalysis();
 });
 document.addEventListener('click', function(e) {
   if (mainMenu.style.display === 'block' && !mainMenu.contains(e.target)) mainMenu.style.display = 'none';
