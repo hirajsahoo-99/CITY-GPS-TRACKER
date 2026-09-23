@@ -480,11 +480,31 @@ let naMap = null;
 let naMarkersLayer = null;
 let naMarkersState = [];   // [{ lat, lng, pct, count, marker }] -- kept across refreshes so markers update in place instead of being recreated
 let naHasFitted = false;   // fitBounds only runs once per "open" session so refreshes don't fight the user's zoom/pan
-const NA_GPS_LIMIT = 1000;             // how many recent gps_history fixes to use as a location pool
-const NA_RANGE_BUFFER_MS = 60000;      // widen the device_status fetch window around those fixes
+const NA_RANGE_BUFFER_MS = 60000;      // widen the device_status fetch window around gps fixes
 const NA_MATCH_TOLERANCE_MS = 30000;   // max time gap to accept a signal reading as "at" a gps fix
 const NA_CLUSTER_RADIUS_KM = 0.05;     // 50 meters -- readings within this radius get merged into one averaged dot
-const gpsHistoryForNaUrl = `https://${FIREBASE_HOST}/gps_history.json?orderBy=%22$key%22&limitToLast=${NA_GPS_LIMIT}`;
+
+// FIX: was limitToLast on a fixed FIX COUNT (1000), which at ~1 fix/sec only covers ~16-17
+// minutes -- effectively just the most recent trip, so Network Analysis only ever showed
+// dots from the last trip. Now fetches the ENTIRE /gps_history.json -- no fix-count limit,
+// no time-window cutoff -- so every trip ever recorded is included, however old.
+// Note: on a large history this pulls down the whole node every refresh (every 8s while
+// Network Analysis is open), which can get slow/heavy over time -- fine for now, but worth
+// revisiting with pagination or a summarized index if gps_history grows very large.
+function fetchGpsHistoryForNetworkAnalysis() {
+  const rangeUrl = `https://${FIREBASE_HOST}/gps_history.json`;
+  return fetch(rangeUrl)
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (!data || typeof data !== 'object') return [];
+      return Object.keys(data)
+        .map(function(k) { return data[k]; })
+        .filter(function(e) {
+          return e && typeof e.lat === 'number' && typeof e.lng === 'number' &&
+                 typeof e.ts === 'number' && !(e.lat === 0 && e.lng === 0);
+        });
+    });
+}
 
 function initNaMapIfNeeded() {
   if (naMap) return;
@@ -598,16 +618,8 @@ function clusterSignalPoints(points, radiusKm) {
 }
 
 function fetchNetworkAnalysis() {
-  fetch(gpsHistoryForNaUrl)
-    .then(function(res) { return res.json(); })
-    .then(function(gpsData) {
-      if (!gpsData || typeof gpsData !== 'object') { renderSignalMap([]); return; }
-      const gpsPoints = Object.keys(gpsData).sort()
-        .map(function(k) { return gpsData[k]; })
-        .filter(function(e) {
-          return e && typeof e.lat === 'number' && typeof e.lng === 'number' &&
-                 typeof e.ts === 'number' && !(e.lat === 0 && e.lng === 0);
-        });
+  fetchGpsHistoryForNetworkAnalysis()
+    .then(function(gpsPoints) {
       if (gpsPoints.length === 0) { renderSignalMap([]); return; }
       gpsPoints.sort(function(a, b) { return a.ts - b.ts; });
       const minTs = gpsPoints[0].ts - NA_RANGE_BUFFER_MS;
