@@ -197,11 +197,6 @@ h2 { color: #333; padding-bottom: 0; font-size: 20px; margin: 0 0 15px 0; }
       <rect x="2" y="8" width="36" height="30" rx="6" fill="none" stroke="#2c3e50" stroke-width="1.3"/>
       <line x1="3" y1="23" x2="37" y2="23" stroke="#ffffff" stroke-width="1"/>
       <text x="20" y="18.3" font-size="7" font-weight="700" letter-spacing="0.3" fill="#ffffff" text-anchor="middle" font-family="'Segoe UI', Tahoma, Geneva, Verdana, sans-serif">GPS</text>
-      <!-- FIX: power icon is now toggled with a live signal-% text (see updateModuleNode() below).
-           When the module's network half is green (netOk), module-power-icon is hidden and
-           module-signal-text shows the current cellular signal as a percentage, derived from
-           signalRssi (device_status.json, AT+CSQ's 0-31 scale). When offline, the plain power
-           icon is shown instead since there's no live reading to trust in that state. -->
       <g id="module-power-icon">
         <path d="M20 27.6 v3.4" stroke="#ffffff" stroke-width="1.3" fill="none" stroke-linecap="round"/>
         <path d="M17.1 29.1 A3.6 3.6 0 1 0 22.9 29.1" stroke="#ffffff" stroke-width="1.3" fill="none" stroke-linecap="round"/>
@@ -472,13 +467,23 @@ function updateModuleNode({ netOk, hasFix, signalRssi }) {
 // a location, then drawn as a colour-coded ripple dot (green/amber/red =
 // strong/medium/weak signal), same ripple style as the "Start" dot on the
 // live map.
+//
+// FIX: readings that fall within NA_CLUSTER_RADIUS_KM (~50m) of each other
+// are grouped and averaged into ONE dot (clusterSignalPoints below),
+// instead of drawing a separate dot per reading. Without this, passing
+// through the same spot repeatedly (e.g. the same street every day) piled
+// up many overlapping dots at that location instead of a single
+// representative average.
 let isNetworkAnalysisOpen = false;
 let naRefreshTimer = null;
 let naMap = null;
 let naMarkersLayer = null;
+let naMarkersState = [];   // [{ lat, lng, pct, count, marker }] -- kept across refreshes so markers update in place instead of being recreated
+let naHasFitted = false;   // fitBounds only runs once per "open" session so refreshes don't fight the user's zoom/pan
 const NA_GPS_LIMIT = 1000;             // how many recent gps_history fixes to use as a location pool
 const NA_RANGE_BUFFER_MS = 60000;      // widen the device_status fetch window around those fixes
 const NA_MATCH_TOLERANCE_MS = 30000;   // max time gap to accept a signal reading as "at" a gps fix
+const NA_CLUSTER_RADIUS_KM = 0.05;     // 50 meters -- readings within this radius get merged into one averaged dot
 const gpsHistoryForNaUrl = `https://${FIREBASE_HOST}/gps_history.json?orderBy=%22$key%22&limitToLast=${NA_GPS_LIMIT}`;
 
 function initNaMapIfNeeded() {
@@ -501,6 +506,10 @@ function openNetworkAnalysis() {
   loadingEl.textContent = 'Loading network history…';
   loadingEl.style.display = 'block';
   initNaMapIfNeeded();
+  // Fresh open -- clear old dots/state so bounds fit again for this session.
+  if (naMarkersLayer) naMarkersLayer.clearLayers();
+  naMarkersState = [];
+  naHasFitted = false;
   setTimeout(function() { if (naMap) naMap.invalidateSize(); }, 50);
   fetchNetworkAnalysis();
   if (naRefreshTimer) clearInterval(naRefreshTimer);
@@ -557,6 +566,37 @@ function nearestByTs(sorted, targetTs, maxDiffMs) {
   return best;
 }
 
+// Groups nearby signal readings (within radiusKm of each other) into a
+// single averaged point, so repeatedly passing through the same spot
+// produces one dot with the average signal instead of many overlapping
+// dots. Uses a simple incremental "join nearest existing cluster, else
+// start a new one" approach -- fine for the point counts this view deals
+// with.
+function clusterSignalPoints(points, radiusKm) {
+  const clusters = [];
+  points.forEach(function(p) {
+    let found = null;
+    for (let i = 0; i < clusters.length; i++) {
+      if (haversineKm(clusters[i].lat, clusters[i].lng, p.lat, p.lng) <= radiusKm) {
+        found = clusters[i];
+        break;
+      }
+    }
+    if (found) {
+      found.sumLat += p.lat;
+      found.sumLng += p.lng;
+      found.sumPct += p.pct;
+      found.count += 1;
+      found.lat = found.sumLat / found.count;
+      found.lng = found.sumLng / found.count;
+      found.pct = Math.round(found.sumPct / found.count);
+    } else {
+      clusters.push({ lat: p.lat, lng: p.lng, sumLat: p.lat, sumLng: p.lng, sumPct: p.pct, pct: p.pct, count: 1 });
+    }
+  });
+  return clusters.map(function(c) { return { lat: c.lat, lng: c.lng, pct: c.pct, count: c.count }; });
+}
+
 function fetchNetworkAnalysis() {
   fetch(gpsHistoryForNaUrl)
     .then(function(res) { return res.json(); })
@@ -573,16 +613,11 @@ function fetchNetworkAnalysis() {
       const minTs = gpsPoints[0].ts - NA_RANGE_BUFFER_MS;
       const maxTs = gpsPoints[gpsPoints.length - 1].ts + NA_RANGE_BUFFER_MS;
       return fetchDeviceStatusWithTs(minTs, maxTs).then(function(statusPoints) {
-        // FIX: plot every cellular signal reading, not just one per GPS
-        // fix. The old code looped over gpsPoints (capped, and often many
-        // of them share nearly the same spot) and pulled the single
-        // nearest signal reading for each -- so at most one dot per GPS
-        // fix ever got drawn, and readings that weren't the "nearest" one
-        // for some GPS point were silently dropped. That's why only the
-        // last/current spot showed up when the vehicle was stationary.
-        // Instead, loop over every signal reading returned for the time
-        // window and give EACH one its own dot, using the nearest-in-time
-        // GPS fix purely to look up a location for it.
+        // Plot every cellular signal reading (matched to its nearest-in-time
+        // GPS fix for a location), then merge readings that land within
+        // ~50m of each other into a single averaged dot via
+        // clusterSignalPoints, so a spot you pass through often shows one
+        // dot with the average signal instead of a pile of dots.
         const matched = [];
         statusPoints.forEach(function(sp) {
           const gp = nearestByTs(gpsPoints, sp.ts, NA_MATCH_TOLERANCE_MS);
@@ -590,7 +625,7 @@ function fetchNetworkAnalysis() {
             matched.push({ lat: gp.lat, lng: gp.lng, pct: Math.round((sp.signalRssi / 31) * 100), ts: sp.ts });
           }
         });
-        renderSignalMap(matched);
+        renderSignalMap(clusterSignalPoints(matched, NA_CLUSTER_RADIUS_KM));
       });
     })
     .catch(function(err) {
@@ -601,37 +636,80 @@ function fetchNetworkAnalysis() {
     });
 }
 
-function makeSignalMarker(latlng, pct) {
-  let tier = 'sig-weak';
-  if (pct >= 70) tier = 'sig-strong';
-  else if (pct >= 40) tier = 'sig-medium';
-  return L.marker(latlng, {
-    icon: L.divIcon({
-      className: 'sig-dot-marker',
-      html: '<div class="sig-dot ' + tier + '"><div class="sig-dot-core"></div></div>',
-      iconSize: [16, 16],
-      iconAnchor: [8, 8],
-      popupAnchor: [0, -8]
-    })
-  }).bindPopup(pct + '% signal');
+function signalTier(pct) {
+  if (pct >= 70) return 'sig-strong';
+  if (pct >= 40) return 'sig-medium';
+  return 'sig-weak';
 }
 
+function makeSignalIcon(pct) {
+  const tier = signalTier(pct);
+  return L.divIcon({
+    className: 'sig-dot-marker',
+    html: '<div class="sig-dot ' + tier + '"><div class="sig-dot-core"></div></div>',
+    iconSize: [16, 16],
+    iconAnchor: [8, 8],
+    popupAnchor: [0, -8]
+  });
+}
+
+function makeSignalMarker(latlng, pct, count) {
+  const popupText = pct + '% avg signal' + (count && count > 1 ? ' (' + count + ' readings)' : '');
+  return L.marker(latlng, { icon: makeSignalIcon(pct) }).bindPopup(popupText);
+}
+
+// Updates existing dots in place (position/popup/icon-only-if-tier-changed)
+// instead of clearing and recreating every marker on each refresh. Wiping
+// and rebuilding used to (a) fight the user's manual zoom/pan every 8s via
+// fitBounds, and (b) restart every dot's ripple CSS animation since a brand
+// new DOM element was created each time. Both are avoided now: fitBounds
+// only runs once per "open" session (naHasFitted), and a marker already at
+// roughly the same spot is reused (naMarkersState) so its element -- and
+// its ripple animation -- stays alive across refreshes.
 function renderSignalMap(points) {
   const loadingEl = document.getElementById('na-loading');
   if (!naMap || !naMarkersLayer) return;
-  naMarkersLayer.clearLayers();
   if (!points || points.length === 0) {
-    loadingEl.textContent = 'No location-matched signal readings yet.';
-    loadingEl.style.display = 'block';
+    if (naMarkersState.length === 0) {
+      loadingEl.textContent = 'No location-matched signal readings yet.';
+      loadingEl.style.display = 'block';
+    }
     return;
   }
   loadingEl.style.display = 'none';
-  const bounds = [];
+
+  const used = new Array(naMarkersState.length).fill(false);
+  const newState = [];
   points.forEach(function(p) {
-    makeSignalMarker([p.lat, p.lng], p.pct).addTo(naMarkersLayer);
-    bounds.push([p.lat, p.lng]);
+    let bestIdx = -1, bestDist = Infinity;
+    for (let i = 0; i < naMarkersState.length; i++) {
+      if (used[i]) continue;
+      const d = haversineKm(naMarkersState[i].lat, naMarkersState[i].lng, p.lat, p.lng);
+      if (d <= NA_CLUSTER_RADIUS_KM && d < bestDist) { bestDist = d; bestIdx = i; }
+    }
+    if (bestIdx >= 0) {
+      used[bestIdx] = true;
+      const existing = naMarkersState[bestIdx];
+      const tierChanged = signalTier(existing.pct) !== signalTier(p.pct);
+      existing.lat = p.lat; existing.lng = p.lng; existing.pct = p.pct; existing.count = p.count;
+      existing.marker.setLatLng([p.lat, p.lng]);
+      existing.marker.setPopupContent(p.pct + '% avg signal' + (p.count && p.count > 1 ? ' (' + p.count + ' readings)' : ''));
+      if (tierChanged) existing.marker.setIcon(makeSignalIcon(p.pct)); // only recreate the coloured dot element when tier actually flips
+      newState.push(existing);
+    } else {
+      const marker = makeSignalMarker([p.lat, p.lng], p.pct, p.count).addTo(naMarkersLayer);
+      newState.push({ lat: p.lat, lng: p.lng, pct: p.pct, count: p.count, marker: marker });
+    }
   });
-  naMap.fitBounds(bounds, { padding: [24, 24], maxZoom: 17 });
+  naMarkersState.forEach(function(s, i) {
+    if (!used[i]) naMarkersLayer.removeLayer(s.marker);
+  });
+  naMarkersState = newState;
+
+  if (!naHasFitted) {
+    naMap.fitBounds(newState.map(function(s) { return [s.lat, s.lng]; }), { padding: [24, 24], maxZoom: 17 });
+    naHasFitted = true;
+  }
 }
 
 const MAPTILER_KEY = "uqDjOTcIKm28iF924vhH";
